@@ -54,6 +54,40 @@ fn load_icon() -> egui::IconData {
     }
 }
 
+fn is_unicast_global(ip: &std::net::Ipv6Addr) -> bool {
+    !ip.is_loopback() && !ip.is_multicast() && (ip.segments()[0] & 0xffc0) != 0xfe80
+}
+
+fn pick_default_ipv6_interface() -> Option<String> {
+    let addrs = get_if_addrs::get_if_addrs().ok()?;
+    let mut names: Vec<String> = addrs
+        .into_iter()
+        .filter_map(|iface| match iface.addr.ip() {
+            std::net::IpAddr::V6(ip) if !ip.is_loopback() && is_unicast_global(&ip) => {
+                Some(iface.name)
+            }
+            _ => None,
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names.into_iter().next()
+}
+
+fn prefer_interface_ipv6_sources(config: &mut AppConfig) -> bool {
+    let default_remote = vec![
+        "https://v6.ident.me".to_string(),
+        "https://api64.ipify.org".to_string(),
+    ];
+    if config.default_ipv6_urls.is_empty() || config.default_ipv6_urls == default_remote {
+        if let Some(name) = pick_default_ipv6_interface() {
+            config.default_ipv6_urls = vec![format!("interface://{}", name)];
+            return true;
+        }
+    }
+    false
+}
+
 fn main() -> eframe::Result {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
@@ -62,7 +96,10 @@ fn main() -> eframe::Result {
     let rt = Runtime::new().expect("Failed to create tokio runtime");
 
     let storage = StorageManager::new().expect("Failed to initialize storage");
-    let config = storage.load_config().unwrap_or_default();
+    let mut config = storage.load_config().unwrap_or_default();
+    if prefer_interface_ipv6_sources(&mut config) {
+        let _ = storage.save_config(&config);
+    }
 
     // Shared state
     let statuses: SharedStatus = Arc::new(Mutex::new(HashMap::new()));
@@ -688,9 +725,18 @@ impl DdnsApp {
         ui.separator();
         ui.heading(i18n::I18n::t(lang, "settings_ipv6_sources"));
         let mut ipv6_to_remove = None;
+        let mut ipv6_move_up = None;
+        let mut ipv6_move_down = None;
+        let ipv6_len = self.config.default_ipv6_urls.len();
         for (i, url) in self.config.default_ipv6_urls.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(url);
+                if i > 0 && ui.small_button("↑").clicked() {
+                    ipv6_move_up = Some(i);
+                }
+                if i + 1 < ipv6_len && ui.small_button("↓").clicked() {
+                    ipv6_move_down = Some(i);
+                }
                 if ui.small_button("✕").clicked() {
                     ipv6_to_remove = Some(i);
                 }
@@ -698,6 +744,12 @@ impl DdnsApp {
         }
         if let Some(i) = ipv6_to_remove {
             self.config.default_ipv6_urls.remove(i);
+            changed = true;
+        } else if let Some(i) = ipv6_move_up {
+            self.config.default_ipv6_urls.swap(i, i - 1);
+            changed = true;
+        } else if let Some(i) = ipv6_move_down {
+            self.config.default_ipv6_urls.swap(i, i + 1);
             changed = true;
         }
         ui.horizontal(|ui| {
