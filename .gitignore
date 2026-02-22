@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test artifacts
+TestResults/
+coverage/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# App local data
+data/

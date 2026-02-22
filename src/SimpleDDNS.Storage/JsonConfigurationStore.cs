@@ -37,7 +37,17 @@ public sealed class JsonConfigurationStore : IAppConfigurationStore
             return initial;
         }
 
-        var json = await File.ReadAllTextAsync(ConfigurationPath, cancellationToken).ConfigureAwait(false);
+        return await LoadFromPathAsync(ConfigurationPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AppConfiguration> LoadFromPathAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path))
+        {
+            return new AppConfiguration();
+        }
+
+        var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
             return new AppConfiguration();
@@ -75,8 +85,34 @@ public sealed class JsonConfigurationStore : IAppConfigurationStore
 
     private static string GetDefaultPath()
     {
-        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SimpleDDNS");
-        return Path.Combine(folder, "config.json");
+        var baseDir = AppContext.BaseDirectory;
+        var localDataDir = Path.Combine(baseDir, "data");
+        var localConfig = Path.Combine(localDataDir, "config.json");
+        var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SimpleDDNS");
+        var appDataConfig = Path.Combine(appDataDir, "config.json");
+        var appDataEntropy = Path.Combine(appDataDir, "entropy.bin");
+        var localEntropy = Path.Combine(localDataDir, "entropy.bin");
+
+        try
+        {
+            Directory.CreateDirectory(localDataDir);
+
+            if (!File.Exists(localConfig) && File.Exists(appDataConfig))
+            {
+                File.Copy(appDataConfig, localConfig, overwrite: false);
+            }
+
+            if (!File.Exists(localEntropy) && File.Exists(appDataEntropy))
+            {
+                File.Copy(appDataEntropy, localEntropy, overwrite: false);
+            }
+
+            return localConfig;
+        }
+        catch
+        {
+            return appDataConfig;
+        }
     }
     
     private static string GetEntropyPath(string configurationPath)

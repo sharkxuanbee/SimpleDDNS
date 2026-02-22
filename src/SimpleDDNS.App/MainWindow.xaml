@@ -31,6 +31,7 @@
 
             <Button x:Name="RunSelectedNowButton" Content="{DynamicResource Main.RunSelected}" Width="90" Margin="0,0,8,8" Click="RunSelectedNowButton_OnClick" />
             <Button x:Name="SettingsButton" Content="{DynamicResource Main.Settings}" Width="90" Margin="0,0,8,8" Click="SettingsButton_OnClick" />
+            <Button x:Name="ImportConfigButton" Content="{DynamicResource Main.ImportConfig}" Width="90" Margin="0,0,8,8" Click="ImportConfigButton_OnClick" />
             <Button x:Name="ExportConfigButton" Content="{DynamicResource Main.ExportConfig}" Width="90" Margin="0,0,8,8" Click="ExportConfigButton_OnClick" />
             <Button x:Name="ExportLogsButton" Content="{DynamicResource Main.ExportLogs}" Width="90" Margin="0,0,8,8" Click="ExportLogsButton_OnClick" />
         </WrapPanel>
@@ -88,3 +89,4 @@
         </StatusBar>
     </Grid>
 </Window>
+

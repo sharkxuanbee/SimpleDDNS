@@ -116,6 +116,12 @@ dotnet publish src/SimpleDDNS.App/SimpleDDNS.App.csproj `
 
 - `%APPDATA%\SimpleDDNS\config.json`
 
+配置文件结构示例（不包含敏感字段）：
+
+- [docs/config.example.json](docs/config.example.json)
+
+敏感字段会被加密存储（DPAPI），建议通过 GUI 的导入/导出功能进行迁移，而不是手工编辑配置。
+
 ## 测试
 
 ```powershell
@@ -152,3 +158,10 @@ dotnet test tests/SimpleDDNS.Tests/SimpleDDNS.Tests.csproj -m:1
 ---
 
 如果你要扩展更多 Provider，直接实现 `SimpleDDNS.Core/Abstractions/IDdnsProvider.cs` 并在 `MainWindow` 中注册即可。
+
+## 开源
+
+- 许可证：MIT，见 [LICENSE](LICENSE)
+- 贡献指南：见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- 安全策略：见 [SECURITY.md](SECURITY.md)
+- 行为准则：见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

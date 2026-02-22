@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+﻿﻿﻿﻿using System.Collections.ObjectModel;
 using System.Windows;
 using Microsoft.Win32;
 using SimpleDDNS.App.Localization;
@@ -285,6 +285,52 @@ public partial class MainWindow : Window
         _startupRegistrationService.SetEnabled(_configuration.Settings.StartWithWindows);
 
         _ = SaveAndApplyConfigurationAsync();
+    }
+
+    private async void ImportConfigButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "JSON 文件 (*.json)|*.json",
+            Title = "导入配置"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            this,
+            "导入将覆盖当前所有配置（包括 Profile 和设置）。\n\n注意：如果导入文件来自其他机器，且包含加密的敏感信息（如密码/Key），导入后这些信息将无法解密（需重新输入）。\n\n是否继续？",
+            "确认导入",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            var newConfig = await _configurationStore.LoadFromPathAsync(dialog.FileName).ConfigureAwait(true);
+            
+            _configuration = newConfig;
+            _profiles = new ObservableCollection<DdnsProfile>(_configuration.Profiles);
+            ProfilesDataGrid.ItemsSource = _profiles;
+            
+            _startupRegistrationService.SetEnabled(_configuration.Settings.StartWithWindows);
+            
+            await SaveAndApplyConfigurationAsync().ConfigureAwait(true);
+            
+            MessageBox.Show(this, "导入成功", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            _logService.Log(LogLevel.Error, "导入配置失败", exception: ex);
+            MessageBox.Show(this, ex.Message, "导入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private async void ExportConfigButton_OnClick(object sender, RoutedEventArgs e)
