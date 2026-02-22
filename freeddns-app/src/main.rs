@@ -1,17 +1,58 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod i18n;
+
 use eframe::egui;
 use freeddns_core::models::DdnsProfile;
 use freeddns_core::provider::DdnsProvider;
 use freeddns_core::scheduler::{DdnsScheduler, SchedulerConfig, SharedLogs, SharedStatus};
 use freeddns_providers::cloudflare::CloudflareProvider;
 use freeddns_providers::generic::GenericHttpProvider;
-use freeddns_storage::config::{AppConfig, StorageManager};
+use freeddns_storage::config::{AppConfig, FullExport, StorageManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::{watch, Mutex};
 use tracing_subscriber::EnvFilter;
+
+fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    
+    // Install Noto Sans SC for Chinese support
+    fonts.font_data.insert(
+        "NotoSansSC".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../assets/fonts/NotoSansSC-Regular.otf"))),
+    );
+
+    // Put NotoSansSC as the highest priority for proportional fonts (UI text)
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "NotoSansSC".to_owned());
+
+    // Also for monospace fonts (Logs)
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "NotoSansSC".to_owned());
+
+    ctx.set_fonts(fonts);
+}
+
+fn load_icon() -> egui::IconData {
+    let icon_raw = include_bytes!("../assets/icons/icon.jpg");
+    let image = image::load_from_memory(icon_raw).expect("Failed to open icon");
+    let image = image.to_rgba8();
+    let (width, height) = image.dimensions();
+    let rgba = image.into_raw();
+    egui::IconData {
+        rgba,
+        width,
+        height,
+    }
+}
 
 fn main() -> eframe::Result {
     tracing_subscriber::fmt()
@@ -40,14 +81,16 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([850.0, 600.0])
-            .with_min_inner_size([650.0, 450.0]),
+            .with_min_inner_size([650.0, 450.0])
+            .with_icon(load_icon()),
         ..Default::default()
     };
 
     eframe::run_native(
         "SimpleDDNS",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            setup_custom_fonts(&cc.egui_ctx);
             Ok(Box::new(DdnsApp::new(
                 storage, config, statuses, logs, config_tx, stop_tx, rt,
             )))
@@ -56,13 +99,17 @@ fn main() -> eframe::Result {
 }
 
 fn build_scheduler_config(config: &AppConfig, storage: &StorageManager) -> SchedulerConfig {
-    // Inject tokens from keyring into provider_config for each profile
+    // Inject tokens from keyring into provider_config for each profile if missing
     let mut profiles = config.profiles.clone();
     for p in profiles.iter_mut() {
         if p.provider_type == "cloudflare" {
-            if let Ok(token) = storage.load_secret(&p.id) {
-                if let Some(obj) = p.provider_config.as_object_mut() {
-                    obj.insert("api_token".to_string(), serde_json::Value::String(token));
+            // Only load from keyring if not already present in config (plaintext fallback)
+            let has_token = p.provider_config.get("api_token").is_some();
+            if !has_token {
+                if let Ok(token) = storage.load_secret(&p.id) {
+                    if let Some(obj) = p.provider_config.as_object_mut() {
+                        obj.insert("api_token".to_string(), serde_json::Value::String(token));
+                    }
                 }
             }
         }
@@ -132,6 +179,7 @@ struct ProfileEditor {
     generic_method: String,  // GET or POST
     generic_body: String,    // POST body template
     generic_headers: String, // JSON string of headers
+    save_error: Option<String>,
 }
 
 impl Default for ProfileEditor {
@@ -145,6 +193,7 @@ impl Default for ProfileEditor {
             generic_method: "GET".to_string(),
             generic_body: String::new(),
             generic_headers: String::new(),
+            save_error: None,
         }
     }
 }
@@ -158,7 +207,7 @@ struct DdnsApp {
     logs: SharedLogs,
     config_tx: watch::Sender<SchedulerConfig>,
     _stop_tx: watch::Sender<bool>,
-    rt: Runtime,
+    _rt: Runtime,
     // Cached copies for rendering (updated each frame from shared state)
     cached_statuses: HashMap<String, freeddns_core::models::ProfileStatus>,
     cached_logs: Vec<String>,
@@ -187,7 +236,7 @@ impl DdnsApp {
             logs,
             config_tx,
             _stop_tx: stop_tx,
-            rt,
+            _rt: rt,
             cached_statuses: HashMap::new(),
             cached_logs: Vec::new(),
             global_running: true,
@@ -203,12 +252,16 @@ impl DdnsApp {
                 let mut profiles = self.config.profiles.clone();
                 for p in profiles.iter_mut() {
                     if p.provider_type == "cloudflare" {
-                        if let Ok(token) = self.storage.load_secret(&p.id) {
-                            if let Some(obj) = p.provider_config.as_object_mut() {
-                                obj.insert(
-                                    "api_token".to_string(),
-                                    serde_json::Value::String(token),
-                                );
+                        // Only load from keyring if not already present in config
+                        let has_token = p.provider_config.get("api_token").is_some();
+                        if !has_token {
+                            if let Ok(token) = self.storage.load_secret(&p.id) {
+                                if let Some(obj) = p.provider_config.as_object_mut() {
+                                    obj.insert(
+                                        "api_token".to_string(),
+                                        serde_json::Value::String(token),
+                                    );
+                                }
                             }
                         }
                     }
@@ -240,6 +293,8 @@ impl DdnsApp {
 
 impl eframe::App for DdnsApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let lang = i18n::Language::from_str(&self.config.language);
+
         // Periodically sync cached state from async world
         self.sync_cached_state();
 
@@ -253,22 +308,16 @@ impl eframe::App for DdnsApp {
                 ui.add_space(10.0);
 
                 if ui
-                    .selectable_label(self.active_tab == 0, "📋 Profiles")
+                    .selectable_label(self.active_tab == 0, i18n::I18n::t(lang, "tab_profiles"))
                     .clicked()
                 {
                     self.active_tab = 0;
                 }
                 if ui
-                    .selectable_label(self.active_tab == 1, "⚙ Settings")
+                    .selectable_label(self.active_tab == 1, i18n::I18n::t(lang, "tab_settings"))
                     .clicked()
                 {
                     self.active_tab = 1;
-                }
-                if ui
-                    .selectable_label(self.active_tab == 2, "📜 Logs")
-                    .clicked()
-                {
-                    self.active_tab = 2;
                 }
 
                 ui.add_space(20.0);
@@ -276,9 +325,9 @@ impl eframe::App for DdnsApp {
 
                 // Global start/stop
                 let label = if self.global_running {
-                    "⏸ Stop"
+                    i18n::I18n::t(lang, "btn_stop")
                 } else {
-                    "▶ Start"
+                    i18n::I18n::t(lang, "btn_start")
                 };
                 if ui.button(label).clicked() {
                     self.global_running = !self.global_running;
@@ -286,10 +335,45 @@ impl eframe::App for DdnsApp {
                 }
             });
 
+        // Bottom panel: always-visible operation logs
+        egui::TopBottomPanel::bottom("log_panel")
+            .min_height(100.0)
+            .max_height(200.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(i18n::I18n::t(lang, "log_panel_title")).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button(i18n::I18n::t(lang, "btn_clear")).clicked() {
+                            if let Ok(mut l) = self.logs.try_lock() {
+                                l.clear();
+                            }
+                            self.cached_logs.clear();
+                        }
+                    });
+                });
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        if self.cached_logs.is_empty() {
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                i18n::I18n::t(lang, "no_logs"),
+                            );
+                        } else {
+                            // Show the most recent log entries
+                            let logs = &self.cached_logs;
+                            for line in logs.iter() {
+                                ui.label(egui::RichText::new(line).monospace().size(11.0));
+                            }
+                        }
+                    });
+            });
+
         egui::CentralPanel::default().show(ctx, |ui| match self.active_tab {
-            0 => self.render_profiles(ui),
-            1 => self.render_settings(ui),
-            2 => self.render_logs(ui),
+            0 => self.render_profiles(ui, lang),
+            1 => self.render_settings(ui, lang),
             _ => {}
         });
 
@@ -298,16 +382,16 @@ impl eframe::App for DdnsApp {
 }
 
 impl DdnsApp {
-    fn render_profiles(&mut self, ui: &mut egui::Ui) {
+    fn render_profiles(&mut self, ui: &mut egui::Ui, lang: i18n::Language) {
         ui.horizontal(|ui| {
-            ui.heading("Profiles");
+            ui.heading(i18n::I18n::t(lang, "tab_profiles"));
             ui.add_space(10.0);
-            if ui.button("➕ Add Profile").clicked() {
+            if ui.button(i18n::I18n::t(lang, "btn_add_profile")).clicked() {
                 self.editor = ProfileEditor::default();
                 self.editor.is_open = true;
                 self.editor.is_new = true;
             }
-            if ui.button("🔄 Update Now").clicked() {
+            if ui.button(i18n::I18n::t(lang, "btn_update_now")).clicked() {
                 self.trigger_immediate_update();
             }
         });
@@ -315,7 +399,7 @@ impl DdnsApp {
 
         if self.config.profiles.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label("No profiles configured. Click 'Add Profile' to get started.");
+                ui.label(i18n::I18n::t(lang, "no_profiles"));
             });
             return;
         }
@@ -346,16 +430,38 @@ impl DdnsApp {
                         ui.label(format!("({})", profile.domain));
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("🗑 Delete").clicked() {
+                            if ui.button(i18n::I18n::t(lang, "btn_delete")).clicked() {
                                 to_delete = Some(idx);
                             }
-                            if ui.button("✏ Edit").clicked() {
+                            if ui.button(i18n::I18n::t(lang, "btn_edit")).clicked() {
                                 self.editor.is_open = true;
                                 self.editor.is_new = false;
+                                self.editor.save_error = None;
                                 self.editor.profile = profile.clone();
-                                // Load token from keyring
-                                self.editor.token =
-                                    self.storage.load_secret(&profile.id).unwrap_or_default();
+                                
+                                // Load token: check plaintext config first, then keyring
+                                println!("DEBUG: Loading profile {}", profile.id);
+                                let plaintext_token = profile.provider_config.get("api_token")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                
+                                if let Some(t) = plaintext_token {
+                                    println!("DEBUG: Found plaintext token in config");
+                                    self.editor.token = t;
+                                } else {
+                                    println!("DEBUG: Attempting to load from keyring");
+                                    match self.storage.load_secret(&profile.id) {
+                                        Ok(t) => {
+                                            println!("DEBUG: Loaded token from keyring");
+                                            self.editor.token = t;
+                                        }
+                                        Err(e) => {
+                                            println!("DEBUG: Failed to load from keyring: {}", e);
+                                            self.editor.token = String::new();
+                                        }
+                                    }
+                                }
+
                                 // Load generic config
                                 let cfg = &profile.provider_config;
                                 self.editor.generic_url = cfg
@@ -383,15 +489,15 @@ impl DdnsApp {
 
                     // Row 2: provider, IPv4/IPv6 toggles, status info
                     ui.horizontal(|ui| {
-                        ui.label(format!("Provider: {}", profile.provider_type));
+                        ui.label(format!("{} {}", i18n::I18n::t(lang, "provider"), profile.provider_type));
                         ui.separator();
                         let mut enable_ipv4 = profile.enable_ipv4;
-                        if ui.checkbox(&mut enable_ipv4, "IPv4").changed() {
+                        if ui.checkbox(&mut enable_ipv4, i18n::I18n::t(lang, "ipv4")).changed() {
                             profile.enable_ipv4 = enable_ipv4;
                             needs_save = true;
                         }
                         let mut enable_ipv6 = profile.enable_ipv6;
-                        if ui.checkbox(&mut enable_ipv6, "IPv6").changed() {
+                        if ui.checkbox(&mut enable_ipv6, i18n::I18n::t(lang, "ipv6")).changed() {
                             profile.enable_ipv6 = enable_ipv6;
                             needs_save = true;
                         }
@@ -436,14 +542,34 @@ impl DdnsApp {
         }
     }
 
-    fn render_settings(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Settings");
+    fn render_settings(&mut self, ui: &mut egui::Ui, lang: i18n::Language) {
+        ui.heading(i18n::I18n::t(lang, "tab_settings"));
         ui.separator();
 
         let mut changed = false;
 
         ui.horizontal(|ui| {
-            ui.label("Check Interval (minutes):");
+            ui.label(i18n::I18n::t(lang, "language"));
+            let mut current_lang = i18n::Language::from_str(&self.config.language);
+            egui::ComboBox::from_id_salt("language_select")
+                .selected_text(match current_lang {
+                    i18n::Language::En => i18n::I18n::t(lang, "lang_en"),
+                    i18n::Language::Zh => i18n::I18n::t(lang, "lang_zh"),
+                })
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut current_lang, i18n::Language::En, i18n::I18n::t(lang, "lang_en")).changed() {
+                        self.config.language = current_lang.to_str().to_string();
+                        changed = true;
+                    }
+                    if ui.selectable_value(&mut current_lang, i18n::Language::Zh, i18n::I18n::t(lang, "lang_zh")).changed() {
+                        self.config.language = current_lang.to_str().to_string();
+                        changed = true;
+                    }
+                });
+        });
+
+        ui.horizontal(|ui| {
+            ui.label(i18n::I18n::t(lang, "settings_check_interval"));
             if ui
                 .add(egui::DragValue::new(&mut self.config.check_interval_minutes).range(1..=1440))
                 .changed()
@@ -453,7 +579,7 @@ impl DdnsApp {
         });
 
         let mut run_on_startup = self.config.run_on_startup;
-        if ui.checkbox(&mut run_on_startup, "Start on boot").changed() {
+        if ui.checkbox(&mut run_on_startup, i18n::I18n::t(lang, "settings_start_on_boot")).changed() {
             self.config.run_on_startup = run_on_startup;
             // Actually toggle auto-launch
             if let Ok(exe) = std::env::current_exe() {
@@ -474,7 +600,66 @@ impl DdnsApp {
 
         ui.add_space(10.0);
         ui.separator();
-        ui.heading("IPv4 Probe Sources");
+        ui.heading(i18n::I18n::t(lang, "settings_interfaces"));
+        
+        egui::ScrollArea::vertical()
+            .id_salt("interfaces_scroll")
+            .max_height(150.0)
+            .show(ui, |ui| {
+                if let Ok(addrs) = get_if_addrs::get_if_addrs() {
+                    // Group by interface name
+                    let mut groups: std::collections::HashMap<String, Vec<std::net::IpAddr>> = std::collections::HashMap::new();
+                    for iface in addrs {
+                        if !iface.addr.ip().is_loopback() {
+                            groups.entry(iface.name).or_default().push(iface.addr.ip());
+                        }
+                    }
+
+                    // Sort keys for consistent display order
+                    let mut names: Vec<_> = groups.keys().cloned().collect();
+                    names.sort();
+
+                    for name in names {
+                        let ips = &groups[&name];
+                        let has_v4 = ips.iter().any(|ip| ip.is_ipv4());
+                        let has_v6 = ips.iter().any(|ip| ip.is_ipv6());
+
+                        ui.horizontal(|ui| {
+                            // Show name and the first IP for context
+                            if let Some(first_ip) = ips.first() {
+                                ui.label(format!("{} ({})", name, first_ip));
+                            } else {
+                                ui.label(&name);
+                            }
+                            
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if has_v6 {
+                                    if ui.button("+ IPv6").clicked() {
+                                        let url = format!("interface://{}", name);
+                                        if !self.config.default_ipv6_urls.contains(&url) {
+                                            self.config.default_ipv6_urls.push(url);
+                                            changed = true;
+                                        }
+                                    }
+                                }
+                                if has_v4 {
+                                    if ui.button("+ IPv4").clicked() {
+                                        let url = format!("interface://{}", name);
+                                        if !self.config.default_ipv4_urls.contains(&url) {
+                                            self.config.default_ipv4_urls.push(url);
+                                            changed = true;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    }
+                }
+            });
+
+        ui.add_space(10.0);
+        ui.separator();
+        ui.heading(i18n::I18n::t(lang, "settings_ipv4_sources"));
         let mut ipv4_to_remove = None;
         for (i, url) in self.config.default_ipv4_urls.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -490,7 +675,7 @@ impl DdnsApp {
         }
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.new_ipv4_url);
-            if ui.button("Add").clicked() && !self.new_ipv4_url.is_empty() {
+            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv4_url.is_empty() {
                 self.config
                     .default_ipv4_urls
                     .push(self.new_ipv4_url.clone());
@@ -501,7 +686,7 @@ impl DdnsApp {
 
         ui.add_space(10.0);
         ui.separator();
-        ui.heading("IPv6 Probe Sources");
+        ui.heading(i18n::I18n::t(lang, "settings_ipv6_sources"));
         let mut ipv6_to_remove = None;
         for (i, url) in self.config.default_ipv6_urls.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -517,7 +702,7 @@ impl DdnsApp {
         }
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.new_ipv6_url);
-            if ui.button("Add").clicked() && !self.new_ipv6_url.is_empty() {
+            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv6_url.is_empty() {
                 self.config
                     .default_ipv6_urls
                     .push(self.new_ipv6_url.clone());
@@ -530,30 +715,45 @@ impl DdnsApp {
             let _ = self.storage.save_config(&self.config);
             self.notify_scheduler();
         }
-    }
 
-    fn render_logs(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(20.0);
+        ui.separator();
+        ui.heading(i18n::I18n::t(lang, "backup_restore"));
+        
         ui.horizontal(|ui| {
-            ui.heading("Logs");
-            if ui.button("Clear").clicked() {
-                if let Ok(mut l) = self.logs.try_lock() {
-                    l.clear();
+            if ui.button(i18n::I18n::t(lang, "btn_export")).clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_file_name("freeddns-backup.json")
+                    .save_file() 
+                {
+                    if let Ok(export) = self.storage.export_full_config() {
+                        if let Ok(json) = serde_json::to_string_pretty(&export) {
+                            let _ = std::fs::write(path, json);
+                        }
+                    }
                 }
-                self.cached_logs.clear();
+            }
+
+            if ui.button(i18n::I18n::t(lang, "btn_import")).clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .pick_file() 
+                {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        if let Ok(export) = serde_json::from_str::<FullExport>(&content) {
+                            if self.storage.import_full_config(export).is_ok() {
+                                // Reload config
+                                if let Ok(new_config) = self.storage.load_config() {
+                                    self.config = new_config;
+                                    self.notify_scheduler();
+                                }
+                            }
+                        }
+                    }
+                }
             }
         });
-        ui.separator();
-
-        egui::ScrollArea::vertical()
-            .stick_to_bottom(true)
-            .show(ui, |ui| {
-                for line in &self.cached_logs {
-                    ui.label(egui::RichText::new(line).monospace().size(12.0));
-                }
-                if self.cached_logs.is_empty() {
-                    ui.label("No logs yet. Logs will appear here when profiles are updated.");
-                }
-            });
     }
 
     fn render_editor_modal(&mut self, ctx: &egui::Context) {
@@ -562,10 +762,12 @@ impl DdnsApp {
             return;
         }
 
+        let lang = i18n::Language::from_str(&self.config.language);
+
         egui::Window::new(if self.editor.is_new {
-            "Add Profile"
+            i18n::I18n::t(lang, "add_profile")
         } else {
-            "Edit Profile"
+            i18n::I18n::t(lang, "edit_profile")
         })
         .open(&mut is_open)
         .collapsible(false)
@@ -576,15 +778,15 @@ impl DdnsApp {
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label("Name:");
+                    ui.label(i18n::I18n::t(lang, "name"));
                     ui.text_edit_singleline(&mut self.editor.profile.name);
                     ui.end_row();
 
-                    ui.label("Domain:");
+                    ui.label(i18n::I18n::t(lang, "domain"));
                     ui.text_edit_singleline(&mut self.editor.profile.domain);
                     ui.end_row();
 
-                    ui.label("Provider:");
+                    ui.label(i18n::I18n::t(lang, "provider"));
                     egui::ComboBox::from_id_salt("provider_type")
                         .selected_text(&self.editor.profile.provider_type)
                         .show_ui(ui, |ui| {
@@ -602,11 +804,11 @@ impl DdnsApp {
                     ui.end_row();
 
                     ui.label("IPv4:");
-                    ui.checkbox(&mut self.editor.profile.enable_ipv4, "Enable A record");
+                    ui.checkbox(&mut self.editor.profile.enable_ipv4, i18n::I18n::t(lang, "enable_ipv4"));
                     ui.end_row();
 
                     ui.label("IPv6:");
-                    ui.checkbox(&mut self.editor.profile.enable_ipv6, "Enable AAAA record");
+                    ui.checkbox(&mut self.editor.profile.enable_ipv6, i18n::I18n::t(lang, "enable_ipv6"));
                     ui.end_row();
                 });
 
@@ -614,12 +816,12 @@ impl DdnsApp {
 
             // Provider-specific config
             if self.editor.profile.provider_type == "cloudflare" {
-                ui.label("Cloudflare Configuration");
+                ui.label(i18n::I18n::t(lang, "cloudflare_config"));
                 egui::Grid::new("cf_config_grid")
                     .num_columns(2)
                     .spacing([10.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("API Token:");
+                        ui.label(i18n::I18n::t(lang, "api_token"));
                         ui.add(egui::TextEdit::singleline(&mut self.editor.token).password(true));
                         ui.end_row();
 
@@ -631,7 +833,7 @@ impl DdnsApp {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        ui.label("Zone Name (optional):");
+                        ui.label(i18n::I18n::t(lang, "zone_name"));
                         if ui.text_edit_singleline(&mut zone_name).changed() {
                             if let Some(obj) = self.editor.profile.provider_config.as_object_mut() {
                                 obj.insert(
@@ -643,16 +845,16 @@ impl DdnsApp {
                         ui.end_row();
                     });
             } else if self.editor.profile.provider_type == "generic" {
-                ui.label("Generic HTTP Configuration");
+                ui.label(i18n::I18n::t(lang, "generic_http_config"));
                 egui::Grid::new("generic_config_grid")
                     .num_columns(2)
                     .spacing([10.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("URL Template:");
+                        ui.label(i18n::I18n::t(lang, "url_template"));
                         ui.text_edit_singleline(&mut self.editor.generic_url);
                         ui.end_row();
 
-                        ui.label("Method:");
+                        ui.label(i18n::I18n::t(lang, "method"));
                         egui::ComboBox::from_id_salt("http_method")
                             .selected_text(&self.editor.generic_method)
                             .show_ui(ui, |ui| {
@@ -671,7 +873,7 @@ impl DdnsApp {
                     });
 
                 if self.editor.generic_method == "POST" {
-                    ui.label("Body Template (JSON):");
+                    ui.label(i18n::I18n::t(lang, "body_template"));
                     ui.add(
                         egui::TextEdit::multiline(&mut self.editor.generic_body)
                             .desired_rows(3)
@@ -679,25 +881,75 @@ impl DdnsApp {
                     );
                 }
 
-                ui.label("Custom Headers (JSON):");
+                ui.label(i18n::I18n::t(lang, "custom_headers"));
                 ui.add(
                     egui::TextEdit::multiline(&mut self.editor.generic_headers)
                         .desired_rows(3)
                         .code_editor(),
                 );
-                ui.label("Placeholders: {domain}, {ipv4}, {ipv6}");
+                ui.label(i18n::I18n::t(lang, "placeholders"));
             }
 
             ui.add_space(10.0);
+            
+            if let Some(ref err) = self.editor.save_error {
+                ui.colored_label(egui::Color32::RED, format!("Error saving: {}", err));
+            }
+
             ui.horizontal(|ui| {
-                if ui.button("💾 Save").clicked() {
+                if ui.button(i18n::I18n::t(lang, "btn_save")).clicked() {
+                    println!("DEBUG: Save button clicked");
+                    // Reset error
+                    self.editor.save_error = None;
+
                     // Build provider_config
                     if self.editor.profile.provider_type == "cloudflare" {
-                        // Save token to keyring (NOT in config)
+                        println!("DEBUG: Saving Cloudflare profile. Token length: {}", self.editor.token.len());
+                        // Try to save token to keyring first
                         if !self.editor.token.is_empty() {
-                            let _ = self
-                                .storage
-                                .save_secret(&self.editor.profile.id, &self.editor.token);
+                            let mut keyring_success = false;
+                            
+                            // Try keyring
+                            match self.storage.save_secret(&self.editor.profile.id, &self.editor.token) {
+                                Ok(_) => {
+                                    println!("DEBUG: Keyring save reported success");
+                                    // VERIFY: Try to load it back immediately to ensure it persisted
+                                    match self.storage.load_secret(&self.editor.profile.id) {
+                                        Ok(loaded) if loaded == self.editor.token => {
+                                            println!("DEBUG: Keyring verification success");
+                                            keyring_success = true;
+                                            // If successful and verified, remove any plaintext token from config
+                                            if let Some(obj) = self.editor.profile.provider_config.as_object_mut() {
+                                                obj.remove("api_token");
+                                            }
+                                        }
+                                        Ok(_) => {
+                                            println!("DEBUG: Keyring verification failed: token mismatch");
+                                        }
+                                        Err(e) => {
+                                            println!("DEBUG: Keyring verification failed (load error): {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("DEBUG: Keyring save failed: {}", e);
+                                }
+                            }
+
+                            // If keyring failed, fallback to plaintext in config
+                            if !keyring_success {
+                                println!("DEBUG: Fallback to plaintext config");
+                                if let Some(obj) = self.editor.profile.provider_config.as_object_mut() {
+                                    obj.insert(
+                                        "api_token".to_string(),
+                                        serde_json::Value::String(self.editor.token.clone()),
+                                    );
+                                } else {
+                                    println!("DEBUG: provider_config is not an object!");
+                                }
+                            }
+                        } else {
+                            println!("DEBUG: Token is empty, skipping save");
                         }
                     } else if self.editor.profile.provider_type == "generic" {
                         let mut obj = serde_json::Map::new();
@@ -735,16 +987,24 @@ impl DdnsApp {
                     {
                         *p = self.editor.profile.clone();
                     }
-                    let _ = self.storage.save_config(&self.config);
+                    println!("DEBUG: Saving config to file...");
+                    if let Err(e) = self.storage.save_config(&self.config) {
+                        println!("DEBUG: Failed to save config: {}", e);
+                        self.editor.save_error = Some(format!("Failed to save config file: {}", e));
+                        return;
+                    }
+                    println!("DEBUG: Config saved successfully");
                     self.notify_scheduler();
                     self.editor.is_open = false;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(i18n::I18n::t(lang, "btn_cancel")).clicked() {
                     self.editor.is_open = false;
                 }
             });
         });
 
-        self.editor.is_open = is_open;
+        if !is_open {
+            self.editor.is_open = false;
+        }
     }
 }

@@ -13,3 +13,4 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 uuid = { version = "1.21.0", features = ["v4"] }
+get_if_addrs = "0.5"

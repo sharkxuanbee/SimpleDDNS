@@ -2,6 +2,7 @@ use directories::ProjectDirs;
 use freeddns_core::models::DdnsProfile;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -21,22 +22,41 @@ pub enum StorageError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub profiles: Vec<DdnsProfile>,
-    pub run_on_startup: bool,
     pub check_interval_minutes: u32,
+    pub run_on_startup: bool,
     pub default_ipv4_urls: Vec<String>,
     pub default_ipv6_urls: Vec<String>,
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    "en".to_string()
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            profiles: vec![],
-            run_on_startup: false,
+            profiles: Vec::new(),
             check_interval_minutes: 5,
-            default_ipv4_urls: vec!["https://api.ipify.org".to_string()],
-            default_ipv6_urls: vec!["https://api6.ipify.org".to_string()],
+            run_on_startup: false,
+            default_ipv4_urls: vec![
+                "https://v4.ident.me".to_string(),
+                "https://api.ipify.org".to_string(),
+            ],
+            default_ipv6_urls: vec![
+                "https://v6.ident.me".to_string(),
+                "https://api64.ipify.org".to_string(),
+            ],
+            language: "en".to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullExport {
+    pub config: AppConfig,
+    pub secrets: HashMap<String, String>,
 }
 
 pub struct StorageManager {
@@ -90,6 +110,29 @@ impl StorageManager {
         let target = format!("freeddns_{}", profile_id);
         let entry = Entry::new(&target, "ddns_user")?;
         let _ = entry.delete_credential(); // Ignore if it doesn't exist
+        Ok(())
+    }
+
+    pub fn export_full_config(&self) -> Result<FullExport, StorageError> {
+        let config = self.load_config()?;
+        let mut secrets = HashMap::new();
+
+        for profile in &config.profiles {
+            if let Ok(secret) = self.load_secret(&profile.id) {
+                secrets.insert(profile.id.clone(), secret);
+            }
+        }
+
+        Ok(FullExport { config, secrets })
+    }
+
+    pub fn import_full_config(&self, export: FullExport) -> Result<(), StorageError> {
+        self.save_config(&export.config)?;
+
+        for (profile_id, secret) in export.secrets {
+            self.save_secret(&profile_id, &secret)?;
+        }
+
         Ok(())
     }
 }
