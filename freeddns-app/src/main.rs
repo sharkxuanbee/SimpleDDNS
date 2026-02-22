@@ -457,15 +457,16 @@ impl DdnsApp {
             self.config.run_on_startup = run_on_startup;
             // Actually toggle auto-launch
             if let Ok(exe) = std::env::current_exe() {
-                let launcher = auto_launch::AutoLaunch::new(
-                    "SimpleDDNS",
-                    exe.to_str().unwrap_or(""),
-                    &[] as &[&str],
-                );
-                if run_on_startup {
-                    let _ = launcher.enable();
-                } else {
-                    let _ = launcher.disable();
+                if let Ok(launcher) = auto_launch::AutoLaunchBuilder::new()
+                    .set_app_name("SimpleDDNS")
+                    .set_app_path(exe.to_str().unwrap_or(""))
+                    .build()
+                {
+                    if run_on_startup {
+                        let _ = launcher.enable();
+                    } else {
+                        let _ = launcher.disable();
+                    }
                 }
             }
             changed = true;
