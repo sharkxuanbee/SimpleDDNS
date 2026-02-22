@@ -1,23 +1,18 @@
-# Build outputs
-bin/
-obj/
-out/
-publish/
-
-# Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Test artifacts
-TestResults/
-coverage/
+# Rust / Cargo
+/target/
+Cargo.lock
 
 # OS
 Thumbs.db
 Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # App local data
 data/

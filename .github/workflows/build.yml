@@ -8,22 +8,39 @@ on:
 
 jobs:
   build:
-
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: actions/cache@v4
       with:
-        dotnet-version: 10.0.x
-        
-    - name: Restore dependencies
-      run: dotnet restore SimpleDDNS.sln
-      
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Check
+      run: cargo check --workspace
+
     - name: Build
-      run: dotnet build SimpleDDNS.sln --no-restore -c Release
-      
+      run: cargo build --release
+
     - name: Test
-      run: dotnet test SimpleDDNS.sln --no-build --verbosity normal -c Release
+      run: cargo test --workspace
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: freeddns-${{ matrix.os }}
+        path: |
+          target/release/freeddns-app
+          target/release/freeddns-app.exe

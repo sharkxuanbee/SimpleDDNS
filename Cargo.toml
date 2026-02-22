@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "freeddns-app",
+    "freeddns-core",
+    "freeddns-providers",
+    "freeddns-storage"
+]
+resolver = "2"

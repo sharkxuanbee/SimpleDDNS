@@ -1,0 +1,17 @@
+[package]
+name = "freeddns-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.30"
+egui = "0.30"
+auto-launch = "0.5"
+tray-icon = "0.19"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0"
+freeddns-core = { version = "0.1.0", path = "../freeddns-core" }
+freeddns-providers = { version = "0.1.0", path = "../freeddns-providers" }
+freeddns-storage = { version = "0.1.0", path = "../freeddns-storage" }

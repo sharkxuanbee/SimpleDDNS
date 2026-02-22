@@ -1,0 +1,15 @@
+[package]
+name = "freeddns-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4.43", features = ["serde"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+uuid = { version = "1.21.0", features = ["v4"] }

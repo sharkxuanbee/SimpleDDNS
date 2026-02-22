@@ -2,139 +2,123 @@
 
 中文 | [English](README.en.md)
 
-Windows 上简单易用的 GUI DDNS 客户端（WPF / .NET 10）。
+跨平台、低资源占用的 DDNS 客户端（Rust + egui）。
 
-目标用户是普通用户：配置好后点按钮即可把域名 A/AAAA 自动同步到当前公网 IP。
+目标用户是普通用户：配置好 Profile 后，后台自动将域名 A/AAAA 记录同步到当前公网 IP。
+
+支持 **Windows / macOS / Linux**。
 
 ## 功能
 
 - 多 Profile 管理：新增 / 编辑 / 删除 / 启用 / 停用。
 - Provider：
-  - Cloudflare（API Token，自动按 Zone Name 查 Zone ID，自动查找/创建/更新 A/AAAA）。
-  - 通用 HTTP 自定义（URL 模板、GET/POST、自定义 Header、POST JSON 模板、测试请求）。
+  - **Cloudflare**（API Token，自动按 Zone Name 查 Zone ID，自动查找/创建/更新 A/AAAA）。
+  - **通用 HTTP 自定义**（URL 模板、GET/POST、自定义 Header、POST JSON 模板）。
 - IPv4/IPv6 独立探测：
-  - IPv4 探测源独立列表。
-  - IPv6 探测源独立列表（默认内置 3 个 IPv6-only 风格地址）。
-  - 支持本地网卡探测源：`local://ipv4`、`local://ipv6`（可用于按本机网卡地址更新）。
+  - IPv4 探测源列表（可自定义）。
+  - IPv6 探测源列表（可自定义）。
+  - 支持本地网卡探测源：`local://ipv4`、`local://ipv6`。
   - 任一协议失败不会阻塞另一协议。
-- 仅变更时更新：仅当 A/AAAA 对应 IP 变化才调用 DNS 更新。
-- 稳定调度：
+- 仅变更时更新：仅当 A/AAAA 对应 IP 变化才调用 DNS API。
+- 后台调度：
   - 全局 Start/Stop。
   - 每个 Profile 单独启停。
-  - 同一 Profile 不并发执行（`SemaphoreSlim`）。
-  - 超时 + 指数退避重试。
-- GUI：
-  - 主窗口列表（名称、域名、A/AAAA 开关、上次更新、当前 IPv4/IPv6、状态）。
-  - 向导式编辑（Provider -> 域名 -> 凭据 -> IPv4/IPv6 -> 高级 -> 完成）。
-  - 日志面板 + 导出日志。
-  - 托盘菜单（打开、全局启停、立即更新、退出）。
-  - 关闭窗口默认最小化到托盘（可在设置中关闭）。
+  - 可配置检查间隔。
+  - HTTP 请求 15 秒超时。
+- GUI（egui 原生）：
+  - 主窗口 Profile 列表（名称、域名、A/AAAA 开关、状态指示灯、当前 IP、上次更新时间）。
+  - Profile 编辑弹窗（Provider 选择 → 域名 → 凭据 → IPv4/IPv6）。
+  - 实时日志面板。
+  - 全局 Start/Stop 按钮。
 - 设置：
-  - 开机自启动（HKCU Run，无需管理员）。
-  - 默认间隔。
-  - IPv4/IPv6 探测源管理（分别管理）。
+  - 开机自启动（跨平台 `auto-launch`）。
+  - 可配置检查间隔。
+  - IPv4/IPv6 探测源管理（增删）。
 - 安全：
-  - 敏感字段不明文存储。
-  - 使用 Windows DPAPI（`CryptProtectData` / `CryptUnprotectData`）加密后写入本地 JSON。
-  - 导出配置默认不含敏感字段；如导出敏感字段会二次确认。
-- 中文界面文案集中在 `src/SimpleDDNS.App/Resources/Strings.zh-CN.xaml`，便于后续多语言扩展。
+  - 敏感字段使用系统原生安全存储（`keyring`）：
+    - Windows: Credential Manager
+    - macOS: Keychain
+    - Linux: Secret Service (GNOME Keyring / KWallet)
+  - Token 不会写入 config.json。
 
-## 截图
+## 技术栈
 
-![主界面](docs/screenshots/main-window.png)
-![向导](docs/screenshots/profile-wizard.png)
-![设置](docs/screenshots/settings.png)
+| 组件 | 技术 |
+|------|------|
+| 语言 | Rust |
+| GUI | egui (eframe) |
+| 异步运行时 | tokio |
+| HTTP | reqwest (rustls) |
+| 安全存储 | keyring |
+| 配置路径 | directories |
+| 开机自启 | auto-launch |
 
 ## 工程结构
 
 ```text
-SimpleDDNS.sln
-src/
-  SimpleDDNS.App/          # WPF UI
-  SimpleDDNS.Core/         # 调度、IP 探测、模板渲染
-  SimpleDDNS.Providers/    # Cloudflare + Generic HTTP
-  SimpleDDNS.Storage/      # JSON 持久化 + DPAPI 加密
-  SimpleDDNS.Logging/      # 轻量日志
-tests/
-  SimpleDDNS.Tests/        # 单元测试
+Cargo.toml (workspace)
+freeddns-app/          # GUI 入口 + 后台调度集成
+freeddns-core/         # 模型、Provider trait、IP 探测、调度器
+freeddns-providers/    # Cloudflare + Generic HTTP 实现
+freeddns-storage/      # JSON 持久化 + keyring 安全存储
 ```
 
 ## Cloudflare Token 最小权限建议
 
 在 Cloudflare 创建 API Token：
 
-- Permissions:
+- Permissions：
   - `Zone.DNS:Edit`
   - `Zone.Zone:Read`（用于按 Zone Name 查 Zone ID）
-- Zone Resources:
+- Zone Resources：
   - 建议限制到目标 Zone（例如 `example.com`）。
 
-不要把 Token 硬编码进源码。请在 GUI 的 Profile 中填写。
+不要把 Token 硬编码进源码。请在 GUI 的 Profile 编辑中填写。
 
 ## 构建与运行
 
-### 1. 构建
+### 环境要求
 
-```powershell
-dotnet build SimpleDDNS.sln -m:1
+- [Rust](https://www.rust-lang.org/tools/install)（推荐 stable 最新版）
+
+### 开发运行
+
+```bash
+cargo run --bin freeddns-app
 ```
 
-### 2. 运行
+### 发布构建
 
-```powershell
-dotnet run --project src/SimpleDDNS.App/SimpleDDNS.App.csproj -m:1
+```bash
+cargo build --release
 ```
 
-## 发布（单文件）
+生成的可执行文件位于 `target/release/freeddns-app`（Linux/macOS）或 `target/release/freeddns-app.exe`（Windows）。
 
-### Framework-dependent 单文件（用户需已安装 .NET Runtime）
+### 交叉编译示例
 
-```powershell
-dotnet publish src/SimpleDDNS.App/SimpleDDNS.App.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained false `
-  -p:PublishSingleFile=true `
-  -o publish/win-x64-fdd
+```bash
+# Linux
+cargo build --release --target x86_64-unknown-linux-gnu
+
+# macOS
+cargo build --release --target x86_64-apple-darwin
+
+# Windows
+cargo build --release --target x86_64-pc-windows-msvc
 ```
-
-### Self-contained 单文件（用户无需安装 .NET Runtime）
-
-```powershell
-dotnet publish src/SimpleDDNS.App/SimpleDDNS.App.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -o publish/win-x64-scd
-```
-
-生成的可执行文件位于上述 `publish/...` 目录。
 
 ## 配置文件位置
 
-默认配置文件：
+配置文件路径遵循各系统标准（由 `directories` crate 管理）：
 
-- `%APPDATA%\SimpleDDNS\config.json`
+| 系统 | 路径 |
+|------|------|
+| Windows | `%APPDATA%\sharkxuanbee\freeddns\config\config.json` |
+| macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
+| Linux | `~/.config/freeddns/config.json` |
 
-配置文件结构示例（不包含敏感字段）：
-
-- [docs/config.example.json](docs/config.example.json)
-
-敏感字段会被加密存储（DPAPI），建议通过 GUI 的导入/导出功能进行迁移，而不是手工编辑配置。
-
-## 测试
-
-```powershell
-dotnet test tests/SimpleDDNS.Tests/SimpleDDNS.Tests.csproj -m:1
-```
-
-当前测试包含：
-
-- IPv6 响应解析。
-- URL/Body 占位符渲染。
-- Profile 序列化 + DPAPI 加密/解密。
+敏感字段存储在系统安全存储中，不在配置文件内。
 
 ## FAQ
 
@@ -147,8 +131,6 @@ dotnet test tests/SimpleDDNS.Tests/SimpleDDNS.Tests.csproj -m:1
 - 光猫/路由器端口映射（前提是你有可入站公网 IP）。
 - 使用内网穿透方案（反向代理/Tunnel）。
 
-如果你使用 `local://ipv4` / `local://ipv6`，得到的可能是内网地址（如 `192.168.x.x`、`fdxx::/64`），请按实际场景使用。
-
 ### 2) 仅 IPv4 或仅 IPv6 网络能用吗？
 
 可以。应用会独立探测并独立更新：
@@ -157,9 +139,11 @@ dotnet test tests/SimpleDDNS.Tests/SimpleDDNS.Tests.csproj -m:1
 - 仅 IPv6：IPv4 显示不可用，不影响 IPv6 更新。
 - 双栈：两者并行独立工作。
 
----
+### 3) 如何扩展更多 Provider？
 
-如果你要扩展更多 Provider，直接实现 `SimpleDDNS.Core/Abstractions/IDdnsProvider.cs` 并在 `MainWindow` 中注册即可。
+在 `freeddns-providers` 中实现 `freeddns_core::provider::DdnsProvider` trait，然后在 `freeddns-app/src/main.rs` 的 `build_providers()` 中注册即可。
+
+---
 
 ## 开源
 

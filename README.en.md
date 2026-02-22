@@ -2,168 +2,99 @@
 
 [中文](README.md) | English
 
-An easy-to-use GUI DDNS client for Windows (WPF / .NET 10).
+Cross-platform, low-resource DDNS client (Rust + egui).
 
-Designed for regular users: configure once, then click to keep your domain A/AAAA records synced to your current public IP.
+Designed for regular users: configure a profile and the app will automatically sync your domain's A/AAAA records to your current public IP in the background.
+
+Supports **Windows / macOS / Linux**.
 
 ## Features
 
 - Multi-profile management: add / edit / delete / enable / disable.
 - Providers:
-  - Cloudflare (API Token, auto resolves Zone ID by Zone Name, auto create/update A/AAAA).
-  - Generic HTTP (URL template, GET/POST, custom headers, JSON body template, test request).
-- Independent IPv4/IPv6 probing:
-  - Separate probe lists for IPv4 and IPv6.
-  - Built-in IPv6-only probe endpoints (3 by default).
-  - Local NIC probes: `local://ipv4`, `local://ipv6`.
-  - Failure of one protocol does not block the other.
-- Update only on change: calls DNS update only when A/AAAA IP changes.
-- Stable scheduling:
-  - Global start/stop.
-  - Per-profile start/stop.
-  - Non-concurrent runs for the same profile (`SemaphoreSlim`).
-  - Timeout + exponential backoff retry.
-- GUI:
-  - Main list (name, hostname, A/AAAA toggles, last update, current IPv4/IPv6, status).
-  - Wizard (Provider -> Domain -> Credentials -> IPv4/IPv6 -> Advanced -> Finish).
-  - Log panel + export logs.
-  - Tray menu (open, global start/stop, run now, exit).
-  - Close to tray by default (configurable).
+  - **Cloudflare** (API Token, auto Zone ID lookup, auto find/create/update A/AAAA records).
+  - **Generic HTTP** (URL template, GET/POST, custom headers, JSON body template).
+- Independent IPv4/IPv6 detection:
+  - Customizable IPv4 probe source list.
+  - Customizable IPv6 probe source list.
+  - Local network interface detection: `local://ipv4`, `local://ipv6`.
+  - Failure in one protocol does not block the other.
+- Update only on change: DNS API is only called when the IP actually differs.
+- Background scheduling:
+  - Global Start/Stop.
+  - Per-profile enable/disable.
+  - Configurable check interval.
+  - 15-second HTTP timeout.
+- Native GUI (egui):
+  - Profile list with status indicators (🟢/🔴), current IPs, last update time.
+  - Profile editor dialog (provider → domain → credentials → IPv4/IPv6).
+  - Live scrolling log panel.
+  - Global Start/Stop button.
 - Settings:
-  - Start with Windows (HKCU Run, no admin required).
-  - Default interval.
-  - IPv4/IPv6 probe list management.
+  - Start on boot (cross-platform via `auto-launch`).
+  - Configurable check interval.
+  - IPv4/IPv6 probe source management.
 - Security:
-  - Sensitive fields are not stored in plain text.
-  - Encrypted with Windows DPAPI (`CryptProtectData` / `CryptUnprotectData`) in local JSON.
-  - Export excludes secrets by default; exporting secrets requires confirmation.
-- Chinese UI strings are centralized in `src/SimpleDDNS.App/Resources/Strings.zh-CN.xaml` for future localization.
+  - Sensitive fields stored in native OS secure storage (`keyring`):
+    - Windows: Credential Manager
+    - macOS: Keychain
+    - Linux: Secret Service (GNOME Keyring / KWallet)
+  - Tokens are never written to config.json.
 
-## Screenshots
+## Tech Stack
 
-![Main window](docs/screenshots/main-window.png)
-![Wizard](docs/screenshots/profile-wizard.png)
-![Settings](docs/screenshots/settings.png)
+| Component | Technology |
+|-----------|-----------|
+| Language | Rust |
+| GUI | egui (eframe) |
+| Async Runtime | tokio |
+| HTTP | reqwest (rustls) |
+| Secure Storage | keyring |
+| Config Paths | directories |
+| Auto-start | auto-launch |
 
-## Structure
+## Project Structure
 
 ```text
-SimpleDDNS.sln
-src/
-  SimpleDDNS.App/          # WPF UI
-  SimpleDDNS.Core/         # Scheduler, IP probing, template rendering
-  SimpleDDNS.Providers/    # Cloudflare + Generic HTTP
-  SimpleDDNS.Storage/      # JSON persistence + DPAPI encryption
-  SimpleDDNS.Logging/      # Lightweight logging
-tests/
-  SimpleDDNS.Tests/        # Unit tests
+Cargo.toml (workspace)
+freeddns-app/          # GUI entry + scheduler integration
+freeddns-core/         # Models, Provider trait, IP resolvers, scheduler
+freeddns-providers/    # Cloudflare + Generic HTTP implementations
+freeddns-storage/      # JSON persistence + keyring secure storage
 ```
 
-## Cloudflare Token Minimum Permissions
+## Building
 
-Create an API token in Cloudflare:
+### Requirements
 
-- Permissions:
-  - `Zone.DNS:Edit`
-  - `Zone.Zone:Read` (to resolve Zone ID by Zone Name)
-- Zone Resources:
-  - Limit to your target Zone (e.g., `example.com`).
+- [Rust](https://www.rust-lang.org/tools/install) (stable, latest recommended)
 
-Do not hardcode the token in source. Fill it in the GUI profile.
+### Development
 
-## Build & Run
-
-### 1. Build
-
-```powershell
-dotnet build SimpleDDNS.sln -m:1
+```bash
+cargo run --bin freeddns-app
 ```
 
-### 2. Run
+### Release Build
 
-```powershell
-dotnet run --project src/SimpleDDNS.App/SimpleDDNS.App.csproj -m:1
+```bash
+cargo build --release
 ```
 
-## Publish (Single-file)
+The binary will be at `target/release/freeddns-app` (Linux/macOS) or `target/release/freeddns-app.exe` (Windows).
 
-### Framework-dependent (requires .NET Runtime installed)
+## Config File Location
 
-```powershell
-dotnet publish src/SimpleDDNS.App/SimpleDDNS.App.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained false `
-  -p:PublishSingleFile=true `
-  -o publish/win-x64-fdd
-```
+Config paths follow OS standards (managed by the `directories` crate):
 
-### Self-contained (no runtime required)
+| OS | Path |
+|----|------|
+| Windows | `%APPDATA%\sharkxuanbee\freeddns\config\config.json` |
+| macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
+| Linux | `~/.config/freeddns/config.json` |
 
-```powershell
-dotnet publish src/SimpleDDNS.App/SimpleDDNS.App.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -o publish/win-x64-scd
-```
+Sensitive fields are stored in the OS secure storage, not in the config file.
 
-The executable will be under `publish/...`.
+## License
 
-## Configuration Location
-
-Default config file:
-
-- `%APPDATA%\SimpleDDNS\config.json`
-
-Example config structure (no secrets):
-
-- [docs/config.example.json](docs/config.example.json)
-
-Secrets are encrypted with DPAPI. Use the GUI import/export instead of manual editing.
-
-## Tests
-
-```powershell
-dotnet test tests/SimpleDDNS.Tests/SimpleDDNS.Tests.csproj -m:1
-```
-
-Current tests cover:
-
-- IPv6 response parsing.
-- URL/Body placeholder rendering.
-- Profile serialization + DPAPI encrypt/decrypt.
-
-## FAQ
-
-### 1) DDNS updated but I still can’t reach my home device?
-
-Common cause: **no publicly reachable IP (e.g., CGNAT)**. DDNS only points the domain to your current public IP and cannot bypass ISP inbound restrictions.
-
-Options:
-
-- Port forwarding on modem/router (requires a public inbound IP).
-- Intranet tunneling / reverse proxy.
-
-If you use `local://ipv4` / `local://ipv6`, you may get a private IP (e.g., `192.168.x.x`, `fdxx::/64`). Use accordingly.
-
-### 2) Can it work with IPv4-only or IPv6-only networks?
-
-Yes. The app probes and updates independently:
-
-- IPv4-only: IPv6 shows unavailable, IPv4 still updates.
-- IPv6-only: IPv4 shows unavailable, IPv6 still updates.
-- Dual stack: both run in parallel.
-
----
-
-To add more providers, implement `SimpleDDNS.Core/Abstractions/IDdnsProvider.cs` and register in `MainWindow`.
-
-## Open Source
-
-- License: MIT, see [LICENSE](LICENSE)
-- Contributing: see [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security: see [SECURITY.md](SECURITY.md)
-- Code of Conduct: see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+MIT — see [LICENSE](LICENSE)
