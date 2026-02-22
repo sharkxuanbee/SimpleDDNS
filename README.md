@@ -1,5 +1,7 @@
 ﻿# SimpleDDNS
 
+中文 | [English](README.en.md)
+
 Windows 上简单易用的 GUI DDNS 客户端（WPF / .NET 10）。
 
 目标用户是普通用户：配置好后点按钮即可把域名 A/AAAA 自动同步到当前公网 IP。
@@ -37,11 +39,11 @@ Windows 上简单易用的 GUI DDNS 客户端（WPF / .NET 10）。
   - 导出配置默认不含敏感字段；如导出敏感字段会二次确认。
 - 中文界面文案集中在 `src/SimpleDDNS.App/Resources/Strings.zh-CN.xaml`，便于后续多语言扩展。
 
-## 截图（占位）
+## 截图
 
-- `docs/screenshots/main-window.png`（主界面）
-- `docs/screenshots/profile-wizard.png`（向导）
-- `docs/screenshots/settings.png`（设置）
+![主界面](docs/screenshots/main-window.png)
+![向导](docs/screenshots/profile-wizard.png)
+![设置](docs/screenshots/settings.png)
 
 ## 工程结构
 
