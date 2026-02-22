@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "SimpleDDNS.Core/1.0.0": {
+        "dependencies": {
+          "SimpleDDNS.Logging": "1.0.0"
+        },
+        "runtime": {
+          "SimpleDDNS.Core.dll": {}
+        }
+      },
+      "SimpleDDNS.Logging/1.0.0": {
+        "runtime": {
+          "SimpleDDNS.Logging.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SimpleDDNS.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SimpleDDNS.Logging/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

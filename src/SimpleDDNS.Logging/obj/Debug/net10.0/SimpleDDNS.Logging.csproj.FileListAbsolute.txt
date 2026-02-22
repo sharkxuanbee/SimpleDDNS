@@ -1,0 +1,17 @@
+d:\code\ddns\tmpbuild\appfix\SimpleDDNS.Logging.deps.json
+d:\code\ddns\tmpbuild\appfix\SimpleDDNS.Logging.dll
+d:\code\ddns\tmpbuild\appfix\SimpleDDNS.Logging.pdb
+d:\code\ddns\tmpbuild\app-localip\SimpleDDNS.Logging.deps.json
+d:\code\ddns\tmpbuild\app-localip\SimpleDDNS.Logging.dll
+d:\code\ddns\tmpbuild\app-localip\SimpleDDNS.Logging.pdb
+D:\code\ddns\src\SimpleDDNS.Logging\bin\Debug\net10.0\SimpleDDNS.Logging.deps.json
+D:\code\ddns\src\SimpleDDNS.Logging\bin\Debug\net10.0\SimpleDDNS.Logging.dll
+D:\code\ddns\src\SimpleDDNS.Logging\bin\Debug\net10.0\SimpleDDNS.Logging.pdb
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.GeneratedMSBuildEditorConfig.editorconfig
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.AssemblyInfoInputs.cache
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.AssemblyInfo.cs
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.csproj.CoreCompileInputs.cache
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.dll
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\refint\SimpleDDNS.Logging.dll
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\SimpleDDNS.Logging.pdb
+D:\code\ddns\src\SimpleDDNS.Logging\obj\Debug\net10.0\ref\SimpleDDNS.Logging.dll
