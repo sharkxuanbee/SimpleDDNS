@@ -35,11 +35,9 @@
   - 可配置检查间隔。
   - IPv4/IPv6 探测源管理（增删）。
 - 安全：
-  - 敏感字段使用系统原生安全存储（`keyring`）：
-    - Windows: Credential Manager
-    - macOS: Keychain
-    - Linux: Secret Service (GNOME Keyring / KWallet)
-  - Token 不会写入 config.json。
+  - 敏感字段使用 AES-256-GCM 加密存储（`secrets.enc`）。
+  - 加密密钥由机器信息派生，绑定当前设备。
+  - Token 不会以明文写入 config.json。
 
 ## 技术栈
 
@@ -49,7 +47,7 @@
 | GUI | egui (eframe) |
 | 异步运行时 | tokio |
 | HTTP | reqwest (rustls) |
-| 安全存储 | keyring |
+| 安全存储 | AES-256-GCM (aes-gcm) |
 | 配置路径 | directories |
 | 开机自启 | auto-launch |
 
@@ -60,7 +58,7 @@ Cargo.toml (workspace)
 freeddns-app/          # GUI 入口 + 后台调度集成
 freeddns-core/         # 模型、Provider trait、IP 探测、调度器
 freeddns-providers/    # Cloudflare + Generic HTTP 实现
-freeddns-storage/      # JSON 持久化 + keyring 安全存储
+freeddns-storage/      # JSON 持久化 + AES-GCM 加密存储
 ```
 
 ## Cloudflare Token 最小权限建议
@@ -118,7 +116,7 @@ cargo build --release --target x86_64-pc-windows-msvc
 | macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
 | Linux | `~/.config/freeddns/config.json` |
 
-敏感字段存储在系统安全存储中，不在配置文件内。
+敏感字段加密存储在同目录下的 `secrets.enc` 文件中，不在 `config.json` 内。
 
 ## FAQ
 

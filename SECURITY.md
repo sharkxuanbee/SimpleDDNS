@@ -12,15 +12,11 @@
 
 ## 敏感信息存储
 
-应用使用系统原生安全存储保护敏感字段：
+应用使用 AES-256-GCM 加密保护敏感字段（API Token 等），加密后存储在 `secrets.enc` 文件中。
 
-| 系统 | 存储后端 |
-|------|---------|
-| Windows | Credential Manager |
-| macOS | Keychain |
-| Linux | Secret Service (GNOME Keyring / KWallet) |
-
-Token 不会写入 `config.json` 配置文件。
+- 加密密钥由机器主机名 + 固定盐值通过 SHA-256 派生。
+- 加密文件绑定当前设备，拷贝到其他机器无法解密。
+- Token 不会以明文写入 `config.json` 配置文件。
 
 ## 使用建议
 

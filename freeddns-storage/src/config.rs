@@ -1,7 +1,11 @@
+use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use directories::ProjectDirs;
 use freeddns_core::models::DdnsProfile;
-use keyring::Entry;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -13,8 +17,8 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("Keyring error: {0}")]
-    Keyring(#[from] keyring::Error),
+    #[error("Encryption error: {0}")]
+    Encryption(String),
     #[error("Failed to determine config directory")]
     NoConfigDir,
 }
@@ -61,6 +65,71 @@ pub struct FullExport {
 
 pub struct StorageManager {
     config_path: PathBuf,
+    secrets_path: PathBuf,
+    encryption_key: [u8; 32],
+}
+
+/// Derive a 32-byte AES key from machine-specific data.
+fn derive_key() -> [u8; 32] {
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown-host".to_string());
+
+    let mut hasher = Sha256::new();
+    hasher.update(hostname.as_bytes());
+    hasher.update(b"freeddns-salt-v1");
+    let result = hasher.finalize();
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
+}
+
+/// Encrypt plaintext using AES-256-GCM. Returns base64(nonce || ciphertext).
+fn encrypt_secret(key: &[u8; 32], plaintext: &str) -> Result<String, StorageError> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| StorageError::Encryption(format!("Failed to create cipher: {}", e)))?;
+
+    let mut nonce_bytes = [0u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext.as_bytes())
+        .map_err(|e| StorageError::Encryption(format!("Encryption failed: {}", e)))?;
+
+    // Concatenate nonce + ciphertext, then base64 encode
+    let mut combined = Vec::with_capacity(12 + ciphertext.len());
+    combined.extend_from_slice(&nonce_bytes);
+    combined.extend_from_slice(&ciphertext);
+
+    Ok(BASE64.encode(&combined))
+}
+
+/// Decrypt a base64(nonce || ciphertext) string using AES-256-GCM.
+fn decrypt_secret(key: &[u8; 32], encoded: &str) -> Result<String, StorageError> {
+    let combined = BASE64
+        .decode(encoded)
+        .map_err(|e| StorageError::Encryption(format!("Base64 decode failed: {}", e)))?;
+
+    if combined.len() < 13 {
+        return Err(StorageError::Encryption(
+            "Encrypted data too short".to_string(),
+        ));
+    }
+
+    let (nonce_bytes, ciphertext) = combined.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| StorageError::Encryption(format!("Failed to create cipher: {}", e)))?;
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|e| StorageError::Encryption(format!("Decryption failed: {}", e)))?;
+
+    String::from_utf8(plaintext)
+        .map_err(|e| StorageError::Encryption(format!("UTF-8 decode failed: {}", e)))
 }
 
 impl StorageManager {
@@ -74,7 +143,14 @@ impl StorageManager {
         }
 
         let config_path = config_dir.join("config.json");
-        Ok(Self { config_path })
+        let secrets_path = config_dir.join("secrets.enc");
+        let encryption_key = derive_key();
+
+        Ok(Self {
+            config_path,
+            secrets_path,
+            encryption_key,
+        })
     }
 
     pub fn load_config(&self) -> Result<AppConfig, StorageError> {
@@ -92,24 +168,44 @@ impl StorageManager {
         Ok(())
     }
 
+    /// Load the encrypted secrets map from disk.
+    fn load_secrets_map(&self) -> HashMap<String, String> {
+        if !self.secrets_path.exists() {
+            return HashMap::new();
+        }
+        fs::read_to_string(&self.secrets_path)
+            .ok()
+            .and_then(|data| serde_json::from_str(&data).ok())
+            .unwrap_or_default()
+    }
+
+    /// Save the secrets map to disk.
+    fn save_secrets_map(&self, map: &HashMap<String, String>) -> Result<(), StorageError> {
+        let data = serde_json::to_string_pretty(map)?;
+        fs::write(&self.secrets_path, data)?;
+        Ok(())
+    }
+
     pub fn save_secret(&self, profile_id: &str, secret: &str) -> Result<(), StorageError> {
-        let target = format!("freeddns_{}", profile_id);
-        let entry = Entry::new(&target, "ddns_user")?;
-        entry.set_password(secret)?;
+        let encrypted = encrypt_secret(&self.encryption_key, secret)?;
+        let mut map = self.load_secrets_map();
+        map.insert(profile_id.to_string(), encrypted);
+        self.save_secrets_map(&map)?;
         Ok(())
     }
 
     pub fn load_secret(&self, profile_id: &str) -> Result<String, StorageError> {
-        let target = format!("freeddns_{}", profile_id);
-        let entry = Entry::new(&target, "ddns_user")?;
-        let secret = entry.get_password()?;
-        Ok(secret)
+        let map = self.load_secrets_map();
+        let encrypted = map.get(profile_id).ok_or_else(|| {
+            StorageError::Encryption(format!("No secret found for profile '{}'", profile_id))
+        })?;
+        decrypt_secret(&self.encryption_key, encrypted)
     }
 
     pub fn delete_secret(&self, profile_id: &str) -> Result<(), StorageError> {
-        let target = format!("freeddns_{}", profile_id);
-        let entry = Entry::new(&target, "ddns_user")?;
-        let _ = entry.delete_credential(); // Ignore if it doesn't exist
+        let mut map = self.load_secrets_map();
+        map.remove(profile_id);
+        self.save_secrets_map(&map)?;
         Ok(())
     }
 
@@ -134,5 +230,38 @@ impl StorageManager {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let key = derive_key();
+        let plaintext = "my-super-secret-api-token-12345";
+
+        let encrypted = encrypt_secret(&key, plaintext).expect("Encryption failed");
+        assert_ne!(encrypted, plaintext);
+
+        let decrypted = decrypt_secret(&key, &encrypted).expect("Decryption failed");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_different_encryptions_differ() {
+        let key = derive_key();
+        let plaintext = "same-token";
+
+        let enc1 = encrypt_secret(&key, plaintext).unwrap();
+        let enc2 = encrypt_secret(&key, plaintext).unwrap();
+
+        // Random nonce means different ciphertext each time
+        assert_ne!(enc1, enc2);
+
+        // But both decrypt to the same plaintext
+        assert_eq!(decrypt_secret(&key, &enc1).unwrap(), plaintext);
+        assert_eq!(decrypt_secret(&key, &enc2).unwrap(), plaintext);
     }
 }

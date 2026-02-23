@@ -39,15 +39,8 @@ pub async fn resolve_ip(
 
 fn resolve_interface(iface_name: &str, version: IpVersion) -> Result<IpAddr, ResolverError> {
     let addrs = get_if_addrs::get_if_addrs().map_err(|_| ResolverError::NoLocalAddress)?;
-    
-    // Debug logging to help diagnose issues
-    #[cfg(feature = "debug_logs")]
-    {
-        tracing::debug!("Resolving interface '{}' for {:?}", iface_name, version);
-        for iface in &addrs {
-            tracing::debug!("Found interface: {} -> {:?}", iface.name, iface.addr.ip());
-        }
-    }
+
+
 
     for iface in addrs {
         // Compare names case-insensitively just in case Windows GUIDs differ in casing
@@ -60,7 +53,7 @@ fn resolve_interface(iface_name: &str, version: IpVersion) -> Result<IpAddr, Res
                     if is_unicast_global(&ip) {
                         return Ok(IpAddr::V6(ip));
                     }
-                },
+                }
                 _ => continue,
             }
         }

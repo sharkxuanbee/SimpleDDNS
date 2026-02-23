@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
 directories = "5.0"
 freeddns-core = { path = "../freeddns-core" }
-keyring = { version = "3.0", features = ["apple-native", "windows-native", "linux-native"] }
+hostname = "0.4"
+rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 thiserror = "1.0"

@@ -17,11 +17,13 @@ use tracing_subscriber::EnvFilter;
 
 fn setup_custom_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    
+
     // Install Noto Sans SC for Chinese support
     fonts.font_data.insert(
         "NotoSansSC".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../assets/fonts/NotoSansSC-Regular.otf"))),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSC-Regular.otf"
+        ))),
     );
 
     // Put NotoSansSC as the highest priority for proportional fonts (UI text)
@@ -136,11 +138,11 @@ fn main() -> eframe::Result {
 }
 
 fn build_scheduler_config(config: &AppConfig, storage: &StorageManager) -> SchedulerConfig {
-    // Inject tokens from keyring into provider_config for each profile if missing
+    // Inject tokens from encrypted secrets into provider_config for each profile if missing
     let mut profiles = config.profiles.clone();
     for p in profiles.iter_mut() {
         if p.provider_type == "cloudflare" {
-            // Only load from keyring if not already present in config (plaintext fallback)
+            // Only load from encrypted secrets if not already present in config
             let has_token = p.provider_config.get("api_token").is_some();
             if !has_token {
                 if let Ok(token) = storage.load_secret(&p.id) {
@@ -211,7 +213,7 @@ struct ProfileEditor {
     is_open: bool,
     is_new: bool,
     profile: DdnsProfile,
-    token: String,           // Cloudflare token (from keyring)
+    token: String,           // Cloudflare token (encrypted in secrets.enc)
     generic_url: String,     // Generic HTTP URL template
     generic_method: String,  // GET or POST
     generic_body: String,    // POST body template
@@ -289,7 +291,7 @@ impl DdnsApp {
                 let mut profiles = self.config.profiles.clone();
                 for p in profiles.iter_mut() {
                     if p.provider_type == "cloudflare" {
-                        // Only load from keyring if not already present in config
+                        // Only load from encrypted secrets if not already present in config
                         let has_token = p.provider_config.get("api_token").is_some();
                         if !has_token {
                             if let Ok(token) = self.storage.load_secret(&p.id) {
@@ -394,10 +396,7 @@ impl eframe::App for DdnsApp {
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
                         if self.cached_logs.is_empty() {
-                            ui.colored_label(
-                                egui::Color32::GRAY,
-                                i18n::I18n::t(lang, "no_logs"),
-                            );
+                            ui.colored_label(egui::Color32::GRAY, i18n::I18n::t(lang, "no_logs"));
                         } else {
                             // Show the most recent log entries
                             let logs = &self.cached_logs;
@@ -475,25 +474,22 @@ impl DdnsApp {
                                 self.editor.is_new = false;
                                 self.editor.save_error = None;
                                 self.editor.profile = profile.clone();
-                                
-                                // Load token: check plaintext config first, then keyring
-                                println!("DEBUG: Loading profile {}", profile.id);
-                                let plaintext_token = profile.provider_config.get("api_token")
+
+                                // Load token: check plaintext config first, then encrypted secrets
+                                let plaintext_token = profile
+                                    .provider_config
+                                    .get("api_token")
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
-                                
+
                                 if let Some(t) = plaintext_token {
-                                    println!("DEBUG: Found plaintext token in config");
                                     self.editor.token = t;
                                 } else {
-                                    println!("DEBUG: Attempting to load from keyring");
                                     match self.storage.load_secret(&profile.id) {
                                         Ok(t) => {
-                                            println!("DEBUG: Loaded token from keyring");
                                             self.editor.token = t;
                                         }
-                                        Err(e) => {
-                                            println!("DEBUG: Failed to load from keyring: {}", e);
+                                        Err(_) => {
                                             self.editor.token = String::new();
                                         }
                                     }
@@ -526,15 +522,25 @@ impl DdnsApp {
 
                     // Row 2: provider, IPv4/IPv6 toggles, status info
                     ui.horizontal(|ui| {
-                        ui.label(format!("{} {}", i18n::I18n::t(lang, "provider"), profile.provider_type));
+                        ui.label(format!(
+                            "{} {}",
+                            i18n::I18n::t(lang, "provider"),
+                            profile.provider_type
+                        ));
                         ui.separator();
                         let mut enable_ipv4 = profile.enable_ipv4;
-                        if ui.checkbox(&mut enable_ipv4, i18n::I18n::t(lang, "ipv4")).changed() {
+                        if ui
+                            .checkbox(&mut enable_ipv4, i18n::I18n::t(lang, "ipv4"))
+                            .changed()
+                        {
                             profile.enable_ipv4 = enable_ipv4;
                             needs_save = true;
                         }
                         let mut enable_ipv6 = profile.enable_ipv6;
-                        if ui.checkbox(&mut enable_ipv6, i18n::I18n::t(lang, "ipv6")).changed() {
+                        if ui
+                            .checkbox(&mut enable_ipv6, i18n::I18n::t(lang, "ipv6"))
+                            .changed()
+                        {
                             profile.enable_ipv6 = enable_ipv6;
                             needs_save = true;
                         }
@@ -594,11 +600,25 @@ impl DdnsApp {
                     i18n::Language::Zh => i18n::I18n::t(lang, "lang_zh"),
                 })
                 .show_ui(ui, |ui| {
-                    if ui.selectable_value(&mut current_lang, i18n::Language::En, i18n::I18n::t(lang, "lang_en")).changed() {
+                    if ui
+                        .selectable_value(
+                            &mut current_lang,
+                            i18n::Language::En,
+                            i18n::I18n::t(lang, "lang_en"),
+                        )
+                        .changed()
+                    {
                         self.config.language = current_lang.to_str().to_string();
                         changed = true;
                     }
-                    if ui.selectable_value(&mut current_lang, i18n::Language::Zh, i18n::I18n::t(lang, "lang_zh")).changed() {
+                    if ui
+                        .selectable_value(
+                            &mut current_lang,
+                            i18n::Language::Zh,
+                            i18n::I18n::t(lang, "lang_zh"),
+                        )
+                        .changed()
+                    {
                         self.config.language = current_lang.to_str().to_string();
                         changed = true;
                     }
@@ -616,7 +636,13 @@ impl DdnsApp {
         });
 
         let mut run_on_startup = self.config.run_on_startup;
-        if ui.checkbox(&mut run_on_startup, i18n::I18n::t(lang, "settings_start_on_boot")).changed() {
+        if ui
+            .checkbox(
+                &mut run_on_startup,
+                i18n::I18n::t(lang, "settings_start_on_boot"),
+            )
+            .changed()
+        {
             self.config.run_on_startup = run_on_startup;
             // Actually toggle auto-launch
             if let Ok(exe) = std::env::current_exe() {
@@ -638,14 +664,15 @@ impl DdnsApp {
         ui.add_space(10.0);
         ui.separator();
         ui.heading(i18n::I18n::t(lang, "settings_interfaces"));
-        
+
         egui::ScrollArea::vertical()
             .id_salt("interfaces_scroll")
             .max_height(150.0)
             .show(ui, |ui| {
                 if let Ok(addrs) = get_if_addrs::get_if_addrs() {
                     // Group by interface name
-                    let mut groups: std::collections::HashMap<String, Vec<std::net::IpAddr>> = std::collections::HashMap::new();
+                    let mut groups: std::collections::HashMap<String, Vec<std::net::IpAddr>> =
+                        std::collections::HashMap::new();
                     for iface in addrs {
                         if !iface.addr.ip().is_loopback() {
                             groups.entry(iface.name).or_default().push(iface.addr.ip());
@@ -668,27 +695,30 @@ impl DdnsApp {
                             } else {
                                 ui.label(&name);
                             }
-                            
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if has_v6 {
-                                    if ui.button("+ IPv6").clicked() {
-                                        let url = format!("interface://{}", name);
-                                        if !self.config.default_ipv6_urls.contains(&url) {
-                                            self.config.default_ipv6_urls.push(url);
-                                            changed = true;
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if has_v6 {
+                                        if ui.button("+ IPv6").clicked() {
+                                            let url = format!("interface://{}", name);
+                                            if !self.config.default_ipv6_urls.contains(&url) {
+                                                self.config.default_ipv6_urls.push(url);
+                                                changed = true;
+                                            }
                                         }
                                     }
-                                }
-                                if has_v4 {
-                                    if ui.button("+ IPv4").clicked() {
-                                        let url = format!("interface://{}", name);
-                                        if !self.config.default_ipv4_urls.contains(&url) {
-                                            self.config.default_ipv4_urls.push(url);
-                                            changed = true;
+                                    if has_v4 {
+                                        if ui.button("+ IPv4").clicked() {
+                                            let url = format!("interface://{}", name);
+                                            if !self.config.default_ipv4_urls.contains(&url) {
+                                                self.config.default_ipv4_urls.push(url);
+                                                changed = true;
+                                            }
                                         }
                                     }
-                                }
-                            });
+                                },
+                            );
                         });
                     }
                 }
@@ -712,7 +742,8 @@ impl DdnsApp {
         }
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.new_ipv4_url);
-            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv4_url.is_empty() {
+            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv4_url.is_empty()
+            {
                 self.config
                     .default_ipv4_urls
                     .push(self.new_ipv4_url.clone());
@@ -754,7 +785,8 @@ impl DdnsApp {
         }
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.new_ipv6_url);
-            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv6_url.is_empty() {
+            if ui.button(i18n::I18n::t(lang, "btn_add")).clicked() && !self.new_ipv6_url.is_empty()
+            {
                 self.config
                     .default_ipv6_urls
                     .push(self.new_ipv6_url.clone());
@@ -771,13 +803,13 @@ impl DdnsApp {
         ui.add_space(20.0);
         ui.separator();
         ui.heading(i18n::I18n::t(lang, "backup_restore"));
-        
+
         ui.horizontal(|ui| {
             if ui.button(i18n::I18n::t(lang, "btn_export")).clicked() {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("JSON", &["json"])
                     .set_file_name("freeddns-backup.json")
-                    .save_file() 
+                    .save_file()
                 {
                     if let Ok(export) = self.storage.export_full_config() {
                         if let Ok(json) = serde_json::to_string_pretty(&export) {
@@ -790,7 +822,7 @@ impl DdnsApp {
             if ui.button(i18n::I18n::t(lang, "btn_import")).clicked() {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("JSON", &["json"])
-                    .pick_file() 
+                    .pick_file()
                 {
                     if let Ok(content) = std::fs::read_to_string(path) {
                         if let Ok(export) = serde_json::from_str::<FullExport>(&content) {
@@ -856,11 +888,17 @@ impl DdnsApp {
                     ui.end_row();
 
                     ui.label("IPv4:");
-                    ui.checkbox(&mut self.editor.profile.enable_ipv4, i18n::I18n::t(lang, "enable_ipv4"));
+                    ui.checkbox(
+                        &mut self.editor.profile.enable_ipv4,
+                        i18n::I18n::t(lang, "enable_ipv4"),
+                    );
                     ui.end_row();
 
                     ui.label("IPv6:");
-                    ui.checkbox(&mut self.editor.profile.enable_ipv6, i18n::I18n::t(lang, "enable_ipv6"));
+                    ui.checkbox(
+                        &mut self.editor.profile.enable_ipv6,
+                        i18n::I18n::t(lang, "enable_ipv6"),
+                    );
                     ui.end_row();
                 });
 
@@ -943,7 +981,7 @@ impl DdnsApp {
             }
 
             ui.add_space(10.0);
-            
+
             if let Some(ref err) = self.editor.save_error {
                 ui.colored_label(egui::Color32::RED, format!("Error saving: {}", err));
             }
@@ -956,52 +994,33 @@ impl DdnsApp {
 
                     // Build provider_config
                     if self.editor.profile.provider_type == "cloudflare" {
-                        println!("DEBUG: Saving Cloudflare profile. Token length: {}", self.editor.token.len());
-                        // Try to save token to keyring first
+                        // Save token to encrypted secrets file
                         if !self.editor.token.is_empty() {
-                            let mut keyring_success = false;
-                            
-                            // Try keyring
-                            match self.storage.save_secret(&self.editor.profile.id, &self.editor.token) {
+                            match self
+                                .storage
+                                .save_secret(&self.editor.profile.id, &self.editor.token)
+                            {
                                 Ok(_) => {
-                                    println!("DEBUG: Keyring save reported success");
-                                    // VERIFY: Try to load it back immediately to ensure it persisted
-                                    match self.storage.load_secret(&self.editor.profile.id) {
-                                        Ok(loaded) if loaded == self.editor.token => {
-                                            println!("DEBUG: Keyring verification success");
-                                            keyring_success = true;
-                                            // If successful and verified, remove any plaintext token from config
-                                            if let Some(obj) = self.editor.profile.provider_config.as_object_mut() {
-                                                obj.remove("api_token");
-                                            }
-                                        }
-                                        Ok(_) => {
-                                            println!("DEBUG: Keyring verification failed: token mismatch");
-                                        }
-                                        Err(e) => {
-                                            println!("DEBUG: Keyring verification failed (load error): {}", e);
-                                        }
+                                    // Token saved to encrypted file, remove plaintext from config
+                                    if let Some(obj) =
+                                        self.editor.profile.provider_config.as_object_mut()
+                                    {
+                                        obj.remove("api_token");
                                     }
                                 }
                                 Err(e) => {
-                                    println!("DEBUG: Keyring save failed: {}", e);
+                                    eprintln!("Failed to save encrypted token: {}", e);
+                                    // Fallback: store in config (plaintext)
+                                    if let Some(obj) =
+                                        self.editor.profile.provider_config.as_object_mut()
+                                    {
+                                        obj.insert(
+                                            "api_token".to_string(),
+                                            serde_json::Value::String(self.editor.token.clone()),
+                                        );
+                                    }
                                 }
                             }
-
-                            // If keyring failed, fallback to plaintext in config
-                            if !keyring_success {
-                                println!("DEBUG: Fallback to plaintext config");
-                                if let Some(obj) = self.editor.profile.provider_config.as_object_mut() {
-                                    obj.insert(
-                                        "api_token".to_string(),
-                                        serde_json::Value::String(self.editor.token.clone()),
-                                    );
-                                } else {
-                                    println!("DEBUG: provider_config is not an object!");
-                                }
-                            }
-                        } else {
-                            println!("DEBUG: Token is empty, skipping save");
                         }
                     } else if self.editor.profile.provider_type == "generic" {
                         let mut obj = serde_json::Map::new();

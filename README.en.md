@@ -35,11 +35,9 @@ Supports **Windows / macOS / Linux**.
   - Configurable check interval.
   - IPv4/IPv6 probe source management.
 - Security:
-  - Sensitive fields stored in native OS secure storage (`keyring`):
-    - Windows: Credential Manager
-    - macOS: Keychain
-    - Linux: Secret Service (GNOME Keyring / KWallet)
-  - Tokens are never written to config.json.
+  - Sensitive fields encrypted with AES-256-GCM and stored in `secrets.enc`.
+  - Encryption key derived from machine identity, bound to the current device.
+  - Tokens are never written to config.json in plaintext.
 
 ## Tech Stack
 
@@ -49,7 +47,7 @@ Supports **Windows / macOS / Linux**.
 | GUI | egui (eframe) |
 | Async Runtime | tokio |
 | HTTP | reqwest (rustls) |
-| Secure Storage | keyring |
+| Secure Storage | AES-256-GCM (aes-gcm) |
 | Config Paths | directories |
 | Auto-start | auto-launch |
 
@@ -60,7 +58,7 @@ Cargo.toml (workspace)
 freeddns-app/          # GUI entry + scheduler integration
 freeddns-core/         # Models, Provider trait, IP resolvers, scheduler
 freeddns-providers/    # Cloudflare + Generic HTTP implementations
-freeddns-storage/      # JSON persistence + keyring secure storage
+freeddns-storage/      # JSON persistence + AES-GCM encrypted storage
 ```
 
 ## Building
@@ -93,7 +91,7 @@ Config paths follow OS standards (managed by the `directories` crate):
 | macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
 | Linux | `~/.config/freeddns/config.json` |
 
-Sensitive fields are stored in the OS secure storage, not in the config file.
+Sensitive fields are encrypted and stored in `secrets.enc` alongside the config file.
 
 ## License
 
