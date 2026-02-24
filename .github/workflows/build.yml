@@ -48,5 +48,5 @@ jobs:
       with:
         name: freeddns-${{ matrix.os }}
         path: |
-          target/release/freeddns-app
-          target/release/freeddns-app.exe
+          target/release/SimpleDDNS
+          target/release/SimpleDDNS.exe

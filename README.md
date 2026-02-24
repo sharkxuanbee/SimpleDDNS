@@ -1,99 +1,99 @@
-ï»¿# SimpleDDNS
+# SimpleDDNS
 
-ä¸­æ–‡ | [English](README.en.md)
+ÖÐÎÄ | [English](README.en.md)
 
-è·¨å¹³å°ã€ä½Žèµ„æºå ç”¨çš„ DDNS å®¢æˆ·ç«¯ï¼ˆRust + eguiï¼‰ã€‚
+¿çÆ½Ì¨¡¢µÍ×ÊÔ´Õ¼ÓÃµÄ DDNS ¿Í»§¶Ë£¨Rust + egui£©¡£
 
-ç›®æ ‡ç”¨æˆ·æ˜¯æ™®é€šç”¨æˆ·ï¼šé…ç½®å¥½ Profile åŽï¼ŒåŽå°è‡ªåŠ¨å°†åŸŸå A/AAAA è®°å½•åŒæ­¥åˆ°å½“å‰å…¬ç½‘ IPã€‚
+Ä¿±êÓÃ»§ÊÇÆÕÍ¨ÓÃ»§£ºÅäÖÃºÃ Profile ºó£¬ºóÌ¨×Ô¶¯½«ÓòÃû A/AAAA ¼ÇÂ¼Í¬²½µ½µ±Ç°¹«Íø IP¡£
 
-æ”¯æŒ **Windows / macOS / Linux**ã€‚
+Ö§³Ö **Windows / macOS / Linux**¡£
 
-## åŠŸèƒ½
+## ¹¦ÄÜ
 
-- å¤š Profile ç®¡ç†ï¼šæ–°å¢ž / ç¼–è¾‘ / åˆ é™¤ / å¯ç”¨ / åœç”¨ã€‚
-- Providerï¼š
-  - **Cloudflare**ï¼ˆAPI Tokenï¼Œè‡ªåŠ¨æŒ‰ Zone Name æŸ¥ Zone IDï¼Œè‡ªåŠ¨æŸ¥æ‰¾/åˆ›å»º/æ›´æ–° A/AAAAï¼‰ã€‚
-  - **é€šç”¨ HTTP è‡ªå®šä¹‰**ï¼ˆURL æ¨¡æ¿ã€GET/POSTã€è‡ªå®šä¹‰ Headerã€POST JSON æ¨¡æ¿ï¼‰ã€‚
-- IPv4/IPv6 ç‹¬ç«‹æŽ¢æµ‹ï¼š
-  - IPv4 æŽ¢æµ‹æºåˆ—è¡¨ï¼ˆå¯è‡ªå®šä¹‰ï¼‰ã€‚
-  - IPv6 æŽ¢æµ‹æºåˆ—è¡¨ï¼ˆå¯è‡ªå®šä¹‰ï¼‰ã€‚
-  - æ”¯æŒæœ¬åœ°ç½‘å¡æŽ¢æµ‹æºï¼š`local://ipv4`ã€`local://ipv6`ã€‚
-  - ä»»ä¸€åè®®å¤±è´¥ä¸ä¼šé˜»å¡žå¦ä¸€åè®®ã€‚
-- ä»…å˜æ›´æ—¶æ›´æ–°ï¼šä»…å½“ A/AAAA å¯¹åº” IP å˜åŒ–æ‰è°ƒç”¨ DNS APIã€‚
-- åŽå°è°ƒåº¦ï¼š
-  - å…¨å±€ Start/Stopã€‚
-  - æ¯ä¸ª Profile å•ç‹¬å¯åœã€‚
-  - å¯é…ç½®æ£€æŸ¥é—´éš”ã€‚
-  - HTTP è¯·æ±‚ 15 ç§’è¶…æ—¶ã€‚
-- GUIï¼ˆegui åŽŸç”Ÿï¼‰ï¼š
-  - ä¸»çª—å£ Profile åˆ—è¡¨ï¼ˆåç§°ã€åŸŸåã€A/AAAA å¼€å…³ã€çŠ¶æ€æŒ‡ç¤ºç¯ã€å½“å‰ IPã€ä¸Šæ¬¡æ›´æ–°æ—¶é—´ï¼‰ã€‚
-  - Profile ç¼–è¾‘å¼¹çª—ï¼ˆProvider é€‰æ‹© â†’ åŸŸå â†’ å‡­æ® â†’ IPv4/IPv6ï¼‰ã€‚
-  - å®žæ—¶æ—¥å¿—é¢æ¿ã€‚
-  - å…¨å±€ Start/Stop æŒ‰é’®ã€‚
-- è®¾ç½®ï¼š
-  - å¼€æœºè‡ªå¯åŠ¨ï¼ˆè·¨å¹³å° `auto-launch`ï¼‰ã€‚
-  - å¯é…ç½®æ£€æŸ¥é—´éš”ã€‚
-  - IPv4/IPv6 æŽ¢æµ‹æºç®¡ç†ï¼ˆå¢žåˆ ï¼‰ã€‚
-- å®‰å…¨ï¼š
-  - æ•æ„Ÿå­—æ®µä½¿ç”¨ AES-256-GCM åŠ å¯†å­˜å‚¨ï¼ˆ`secrets.enc`ï¼‰ã€‚
-  - åŠ å¯†å¯†é’¥ç”±æœºå™¨ä¿¡æ¯æ´¾ç”Ÿï¼Œç»‘å®šå½“å‰è®¾å¤‡ã€‚
-  - Token ä¸ä¼šä»¥æ˜Žæ–‡å†™å…¥ config.jsonã€‚
+- ¶à Profile ¹ÜÀí£ºÐÂÔö / ±à¼­ / É¾³ý / ÆôÓÃ / Í£ÓÃ¡£
+- Provider£º
+  - **Cloudflare**£¨API Token£¬×Ô¶¯°´ Zone Name ²é Zone ID£¬×Ô¶¯²éÕÒ/´´½¨/¸üÐÂ A/AAAA£©¡£
+  - **Í¨ÓÃ HTTP ×Ô¶¨Òå**£¨URL Ä£°å¡¢GET/POST¡¢×Ô¶¨Òå Header¡¢POST JSON Ä£°å£©¡£
+- IPv4/IPv6 ¶ÀÁ¢Ì½²â£º
+  - IPv4 Ì½²âÔ´ÁÐ±í£¨¿É×Ô¶¨Òå£©¡£
+  - IPv6 Ì½²âÔ´ÁÐ±í£¨¿É×Ô¶¨Òå£©¡£
+  - Ö§³Ö±¾µØÍø¿¨Ì½²âÔ´£º`local://ipv4`¡¢`local://ipv6`¡£
+  - ÈÎÒ»Ð­ÒéÊ§°Ü²»»á×èÈûÁíÒ»Ð­Òé¡£
+- ½ö±ä¸üÊ±¸üÐÂ£º½öµ± A/AAAA ¶ÔÓ¦ IP ±ä»¯²Åµ÷ÓÃ DNS API¡£
+- ºóÌ¨µ÷¶È£º
+  - È«¾Ö Start/Stop¡£
+  - Ã¿¸ö Profile µ¥¶ÀÆôÍ£¡£
+  - ¿ÉÅäÖÃ¼ì²é¼ä¸ô¡£
+  - HTTP ÇëÇó 15 Ãë³¬Ê±¡£
+- GUI£¨egui Ô­Éú£©£º
+  - Ö÷´°¿Ú Profile ÁÐ±í£¨Ãû³Æ¡¢ÓòÃû¡¢A/AAAA ¿ª¹Ø¡¢×´Ì¬Ö¸Ê¾µÆ¡¢µ±Ç° IP¡¢ÉÏ´Î¸üÐÂÊ±¼ä£©¡£
+  - Profile ±à¼­µ¯´°£¨Provider Ñ¡Ôñ ¡ú ÓòÃû ¡ú Æ¾¾Ý ¡ú IPv4/IPv6£©¡£
+  - ÊµÊ±ÈÕÖ¾Ãæ°å¡£
+  - È«¾Ö Start/Stop °´Å¥¡£
+- ÉèÖÃ£º
+  - ¿ª»ú×ÔÆô¶¯£¨¿çÆ½Ì¨ `auto-launch`£©¡£
+  - ¿ÉÅäÖÃ¼ì²é¼ä¸ô¡£
+  - IPv4/IPv6 Ì½²âÔ´¹ÜÀí£¨ÔöÉ¾£©¡£
+- °²È«£º
+  - Ãô¸Ð×Ö¶ÎÊ¹ÓÃ AES-256-GCM ¼ÓÃÜ´æ´¢£¨`secrets.enc`£©¡£
+  - ¼ÓÃÜÃÜÔ¿ÓÉ»úÆ÷ÐÅÏ¢ÅÉÉú£¬°ó¶¨µ±Ç°Éè±¸¡£
+  - Token ²»»áÒÔÃ÷ÎÄÐ´Èë config.json¡£
 
-## æŠ€æœ¯æ ˆ
+## ¼¼ÊõÕ»
 
-| ç»„ä»¶ | æŠ€æœ¯ |
+| ×é¼þ | ¼¼Êõ |
 |------|------|
-| è¯­è¨€ | Rust |
+| ÓïÑÔ | Rust |
 | GUI | egui (eframe) |
-| å¼‚æ­¥è¿è¡Œæ—¶ | tokio |
+| Òì²½ÔËÐÐÊ± | tokio |
 | HTTP | reqwest (rustls) |
-| å®‰å…¨å­˜å‚¨ | AES-256-GCM (aes-gcm) |
-| é…ç½®è·¯å¾„ | directories |
-| å¼€æœºè‡ªå¯ | auto-launch |
+| °²È«´æ´¢ | AES-256-GCM (aes-gcm) |
+| ÅäÖÃÂ·¾¶ | directories |
+| ¿ª»ú×ÔÆô | auto-launch |
 
-## å·¥ç¨‹ç»“æž„
+## ¹¤³Ì½á¹¹
 
 ```text
 Cargo.toml (workspace)
-freeddns-app/          # GUI å…¥å£ + åŽå°è°ƒåº¦é›†æˆ
-freeddns-core/         # æ¨¡åž‹ã€Provider traitã€IP æŽ¢æµ‹ã€è°ƒåº¦å™¨
-freeddns-providers/    # Cloudflare + Generic HTTP å®žçŽ°
-freeddns-storage/      # JSON æŒä¹…åŒ– + AES-GCM åŠ å¯†å­˜å‚¨
+simpleddns-app/          # GUI Èë¿Ú + ºóÌ¨µ÷¶È¼¯³É
+simpleddns-core/         # Ä£ÐÍ¡¢Provider trait¡¢IP Ì½²â¡¢µ÷¶ÈÆ÷
+simpleddns-providers/    # Cloudflare + Generic HTTP ÊµÏÖ
+simpleddns-storage/      # JSON ³Ö¾Ã»¯ + AES-GCM ¼ÓÃÜ´æ´¢
 ```
 
-## Cloudflare Token æœ€å°æƒé™å»ºè®®
+## Cloudflare Token ×îÐ¡È¨ÏÞ½¨Òé
 
-åœ¨ Cloudflare åˆ›å»º API Tokenï¼š
+ÔÚ Cloudflare ´´½¨ API Token£º
 
-- Permissionsï¼š
+- Permissions£º
   - `Zone.DNS:Edit`
-  - `Zone.Zone:Read`ï¼ˆç”¨äºŽæŒ‰ Zone Name æŸ¥ Zone IDï¼‰
-- Zone Resourcesï¼š
-  - å»ºè®®é™åˆ¶åˆ°ç›®æ ‡ Zoneï¼ˆä¾‹å¦‚ `example.com`ï¼‰ã€‚
+  - `Zone.Zone:Read`£¨ÓÃÓÚ°´ Zone Name ²é Zone ID£©
+- Zone Resources£º
+  - ½¨ÒéÏÞÖÆµ½Ä¿±ê Zone£¨ÀýÈç `example.com`£©¡£
 
-ä¸è¦æŠŠ Token ç¡¬ç¼–ç è¿›æºç ã€‚è¯·åœ¨ GUI çš„ Profile ç¼–è¾‘ä¸­å¡«å†™ã€‚
+²»Òª°Ñ Token Ó²±àÂë½øÔ´Âë¡£ÇëÔÚ GUI µÄ Profile ±à¼­ÖÐÌîÐ´¡£
 
-## æž„å»ºä¸Žè¿è¡Œ
+## ¹¹½¨ÓëÔËÐÐ
 
-### çŽ¯å¢ƒè¦æ±‚
+### »·¾³ÒªÇó
 
-- [Rust](https://www.rust-lang.org/tools/install)ï¼ˆæŽ¨è stable æœ€æ–°ç‰ˆï¼‰
+- [Rust](https://www.rust-lang.org/tools/install)£¨ÍÆ¼ö stable ×îÐÂ°æ£©
 
-### å¼€å‘è¿è¡Œ
+### ¿ª·¢ÔËÐÐ
 
 ```bash
-cargo run --bin freeddns-app
+cargo run --bin simpleddns-app
 ```
 
-### å‘å¸ƒæž„å»º
+### ·¢²¼¹¹½¨
 
 ```bash
 cargo build --release
 ```
 
-ç”Ÿæˆçš„å¯æ‰§è¡Œæ–‡ä»¶ä½äºŽ `target/release/freeddns-app`ï¼ˆLinux/macOSï¼‰æˆ– `target/release/freeddns-app.exe`ï¼ˆWindowsï¼‰ã€‚
+Éú³ÉµÄ¿ÉÖ´ÐÐÎÄ¼þÎ»ÓÚ `target/release/simpleddns-app`£¨Linux/macOS£©»ò `target/release/simpleddns-app.exe`£¨Windows£©¡£
 
-### äº¤å‰ç¼–è¯‘ç¤ºä¾‹
+### ½»²æ±àÒëÊ¾Àý
 
 ```bash
 # Linux
@@ -106,46 +106,46 @@ cargo build --release --target x86_64-apple-darwin
 cargo build --release --target x86_64-pc-windows-msvc
 ```
 
-## é…ç½®æ–‡ä»¶ä½ç½®
+## ÅäÖÃÎÄ¼þÎ»ÖÃ
 
-é…ç½®æ–‡ä»¶è·¯å¾„éµå¾ªå„ç³»ç»Ÿæ ‡å‡†ï¼ˆç”± `directories` crate ç®¡ç†ï¼‰ï¼š
+ÅäÖÃÎÄ¼þÂ·¾¶×ñÑ­¸÷ÏµÍ³±ê×¼£¨ÓÉ `directories` crate ¹ÜÀí£©£º
 
-| ç³»ç»Ÿ | è·¯å¾„ |
+| ÏµÍ³ | Â·¾¶ |
 |------|------|
-| Windows | `%APPDATA%\sharkxuanbee\freeddns\config\config.json` |
-| macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
-| Linux | `~/.config/freeddns/config.json` |
+| Windows | `%APPDATA%\sharkxuanbee\simpleddns\config\config.json` |
+| macOS | `~/Library/Application Support/com.sharkxuanbee.simpleddns/config.json` |
+| Linux | `~/.config/simpleddns/config.json` |
 
-æ•æ„Ÿå­—æ®µåŠ å¯†å­˜å‚¨åœ¨åŒç›®å½•ä¸‹çš„ `secrets.enc` æ–‡ä»¶ä¸­ï¼Œä¸åœ¨ `config.json` å†…ã€‚
+Ãô¸Ð×Ö¶Î¼ÓÃÜ´æ´¢ÔÚÍ¬Ä¿Â¼ÏÂµÄ `secrets.enc` ÎÄ¼þÖÐ£¬²»ÔÚ `config.json` ÄÚ¡£
 
 ## FAQ
 
-### 1) ä¸ºä»€ä¹ˆæ›´æ–°äº† DDNS è¿˜æ˜¯è¿žä¸ä¸Šå®¶é‡Œè®¾å¤‡ï¼Ÿ
+### 1) ÎªÊ²Ã´¸üÐÂÁË DDNS »¹ÊÇÁ¬²»ÉÏ¼ÒÀïÉè±¸£¿
 
-å¸¸è§åŽŸå› æ˜¯ **æ— å…¬ç½‘å¯å…¥ç«™ IPï¼ˆä¾‹å¦‚ CGNATï¼‰**ã€‚DDNS åªèƒ½æŠŠåŸŸåæŒ‡å‘å½“å‰å‡ºå£ IPï¼Œä¸èƒ½ç»•è¿‡è¿è¥å•†çš„å…¥ç«™é™åˆ¶ã€‚
+³£¼ûÔ­ÒòÊÇ **ÎÞ¹«Íø¿ÉÈëÕ¾ IP£¨ÀýÈç CGNAT£©**¡£DDNS Ö»ÄÜ°ÑÓòÃûÖ¸Ïòµ±Ç°³ö¿Ú IP£¬²»ÄÜÈÆ¹ýÔËÓªÉÌµÄÈëÕ¾ÏÞÖÆ¡£
 
-å¯é€‰æ–¹æ¡ˆï¼š
+¿ÉÑ¡·½°¸£º
 
-- å…‰çŒ«/è·¯ç”±å™¨ç«¯å£æ˜ å°„ï¼ˆå‰ææ˜¯ä½ æœ‰å¯å…¥ç«™å…¬ç½‘ IPï¼‰ã€‚
-- ä½¿ç”¨å†…ç½‘ç©¿é€æ–¹æ¡ˆï¼ˆåå‘ä»£ç†/Tunnelï¼‰ã€‚
+- ¹âÃ¨/Â·ÓÉÆ÷¶Ë¿ÚÓ³Éä£¨Ç°ÌáÊÇÄãÓÐ¿ÉÈëÕ¾¹«Íø IP£©¡£
+- Ê¹ÓÃÄÚÍø´©Í¸·½°¸£¨·´Ïò´úÀí/Tunnel£©¡£
 
-### 2) ä»… IPv4 æˆ–ä»… IPv6 ç½‘ç»œèƒ½ç”¨å—ï¼Ÿ
+### 2) ½ö IPv4 »ò½ö IPv6 ÍøÂçÄÜÓÃÂð£¿
 
-å¯ä»¥ã€‚åº”ç”¨ä¼šç‹¬ç«‹æŽ¢æµ‹å¹¶ç‹¬ç«‹æ›´æ–°ï¼š
+¿ÉÒÔ¡£Ó¦ÓÃ»á¶ÀÁ¢Ì½²â²¢¶ÀÁ¢¸üÐÂ£º
 
-- ä»… IPv4ï¼šIPv6 æ˜¾ç¤ºä¸å¯ç”¨ï¼Œä¸å½±å“ IPv4 æ›´æ–°ã€‚
-- ä»… IPv6ï¼šIPv4 æ˜¾ç¤ºä¸å¯ç”¨ï¼Œä¸å½±å“ IPv6 æ›´æ–°ã€‚
-- åŒæ ˆï¼šä¸¤è€…å¹¶è¡Œç‹¬ç«‹å·¥ä½œã€‚
+- ½ö IPv4£ºIPv6 ÏÔÊ¾²»¿ÉÓÃ£¬²»Ó°Ïì IPv4 ¸üÐÂ¡£
+- ½ö IPv6£ºIPv4 ÏÔÊ¾²»¿ÉÓÃ£¬²»Ó°Ïì IPv6 ¸üÐÂ¡£
+- Ë«Õ»£ºÁ½Õß²¢ÐÐ¶ÀÁ¢¹¤×÷¡£
 
-### 3) å¦‚ä½•æ‰©å±•æ›´å¤š Providerï¼Ÿ
+### 3) ÈçºÎÀ©Õ¹¸ü¶à Provider£¿
 
-åœ¨ `freeddns-providers` ä¸­å®žçŽ° `freeddns_core::provider::DdnsProvider` traitï¼Œç„¶åŽåœ¨ `freeddns-app/src/main.rs` çš„ `build_providers()` ä¸­æ³¨å†Œå³å¯ã€‚
+ÔÚ `simpleddns-providers` ÖÐÊµÏÖ `simpleddns_core::provider::DdnsProvider` trait£¬È»ºóÔÚ `simpleddns-app/src/main.rs` µÄ `build_providers()` ÖÐ×¢²á¼´¿É¡£
 
 ---
 
-## å¼€æº
+## ¿ªÔ´
 
-- è®¸å¯è¯ï¼šMITï¼Œè§ [LICENSE](LICENSE)
-- è´¡çŒ®æŒ‡å—ï¼šè§ [CONTRIBUTING.md](CONTRIBUTING.md)
-- å®‰å…¨ç­–ç•¥ï¼šè§ [SECURITY.md](SECURITY.md)
-- è¡Œä¸ºå‡†åˆ™ï¼šè§ [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Ðí¿ÉÖ¤£ºMIT£¬¼û [LICENSE](LICENSE)
+- ¹±Ï×Ö¸ÄÏ£º¼û [CONTRIBUTING.md](CONTRIBUTING.md)
+- °²È«²ßÂÔ£º¼û [SECURITY.md](SECURITY.md)
+- ÐÐÎª×¼Ôò£º¼û [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

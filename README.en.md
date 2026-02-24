@@ -27,7 +27,7 @@ Supports **Windows / macOS / Linux**.
   - 15-second HTTP timeout.
 - Native GUI (egui):
   - Profile list with status indicators (ðŸŸ¢/ðŸ”´), current IPs, last update time.
-  - Profile editor dialog (provider â†’ domain â†’ credentials â†’ IPv4/IPv6).
+  - Profile editor dialog (provider â†?domain â†?credentials â†?IPv4/IPv6).
   - Live scrolling log panel.
   - Global Start/Stop button.
 - Settings:
@@ -55,10 +55,10 @@ Supports **Windows / macOS / Linux**.
 
 ```text
 Cargo.toml (workspace)
-freeddns-app/          # GUI entry + scheduler integration
-freeddns-core/         # Models, Provider trait, IP resolvers, scheduler
-freeddns-providers/    # Cloudflare + Generic HTTP implementations
-freeddns-storage/      # JSON persistence + AES-GCM encrypted storage
+simpleddns-app/          # GUI entry + scheduler integration
+simpleddns-core/         # Models, Provider trait, IP resolvers, scheduler
+simpleddns-providers/    # Cloudflare + Generic HTTP implementations
+simpleddns-storage/      # JSON persistence + AES-GCM encrypted storage
 ```
 
 ## Building
@@ -70,7 +70,7 @@ freeddns-storage/      # JSON persistence + AES-GCM encrypted storage
 ### Development
 
 ```bash
-cargo run --bin freeddns-app
+cargo run --bin simpleddns-app
 ```
 
 ### Release Build
@@ -79,7 +79,7 @@ cargo run --bin freeddns-app
 cargo build --release
 ```
 
-The binary will be at `target/release/freeddns-app` (Linux/macOS) or `target/release/freeddns-app.exe` (Windows).
+The binary will be at `target/release/simpleddns-app` (Linux/macOS) or `target/release/simpleddns-app.exe` (Windows).
 
 ## Config File Location
 
@@ -87,12 +87,12 @@ Config paths follow OS standards (managed by the `directories` crate):
 
 | OS | Path |
 |----|------|
-| Windows | `%APPDATA%\sharkxuanbee\freeddns\config\config.json` |
-| macOS | `~/Library/Application Support/com.sharkxuanbee.freeddns/config.json` |
-| Linux | `~/.config/freeddns/config.json` |
+| Windows | `%APPDATA%\sharkxuanbee\simpleddns\config\config.json` |
+| macOS | `~/Library/Application Support/com.sharkxuanbee.simpleddns/config.json` |
+| Linux | `~/.config/simpleddns/config.json` |
 
 Sensitive fields are encrypted and stored in `secrets.enc` alongside the config file.
 
 ## License
 
-MIT â€” see [LICENSE](LICENSE)
+MIT â€?see [LICENSE](LICENSE)

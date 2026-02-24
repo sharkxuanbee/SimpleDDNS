@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "freeddns-app",
-    "freeddns-core",
-    "freeddns-providers",
-    "freeddns-storage"
+    "simpleddns-app",
+    "simpleddns-core",
+    "simpleddns-providers",
+    "simpleddns-storage"
 ]
 resolver = "2"
