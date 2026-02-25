@@ -5,7 +5,13 @@ use reqwest::Client;
 use std::net::IpAddr;
 use tracing::info;
  pub struct GenericHttpProvider;
- impl GenericHttpProvider {
+ impl Default for GenericHttpProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GenericHttpProvider {
     pub fn new() -> Self {
         Self     }
 }

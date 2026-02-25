@@ -483,23 +483,19 @@ else {
                                 ui.label(&name);
                             }
                              ui.with_layout(                                 egui::Layout::right_to_left(egui::Align::Center),                                 |ui| {
-                                    if has_v6 {
-                                        if ui.button("+ IPv6").clicked() {
+                                    if has_v6 && ui.button("+ IPv6").clicked() {
                                             let url = format!("interface://{}", name);
                                             if !self.config.default_ipv6_urls.contains(&url) {
                                                 self.config.default_ipv6_urls.push(url);
                                                 changed = true;
                                             }
-                                        }
                                     }
-                                    if has_v4 {
-                                        if ui.button("+ IPv4").clicked() {
+                                    if has_v4 && ui.button("+ IPv4").clicked() {
                                             let url = format!("interface://{}", name);
                                             if !self.config.default_ipv4_urls.contains(&url) {
                                                 self.config.default_ipv4_urls.push(url);
                                                 changed = true;
                                             }
-                                        }
                                     }
                                 },                             );
                         });

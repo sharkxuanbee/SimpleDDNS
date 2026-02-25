@@ -6,7 +6,7 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 /// Shared state between the scheduler and the GUI.

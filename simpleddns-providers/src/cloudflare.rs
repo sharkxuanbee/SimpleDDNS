@@ -5,7 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use tracing::{debug, info};
  pub struct CloudflareProvider;
- impl CloudflareProvider {
+ impl Default for CloudflareProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CloudflareProvider {
     pub fn new() -> Self {
         Self     }
 }

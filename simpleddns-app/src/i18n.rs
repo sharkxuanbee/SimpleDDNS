@@ -1,13 +1,8 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Language {
+    #[default]
     En,
     Zh,
-}
-
-impl Default for Language {
-    fn default() -> Self {
-        Language::En
-    }
 }
 
 impl Language {
@@ -17,7 +12,7 @@ impl Language {
             _ => Language::En,
         }
     }
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(self) -> &'static str {
         match self {
             Language::En => "en",
             Language::Zh => "zh",
@@ -28,7 +23,7 @@ impl Language {
 pub struct I18n;
 
 impl I18n {
-    pub fn t<'a>(lang: Language, key: &'a str) -> &'a str {
+    pub fn t(lang: Language, key: &str) -> &str {
         match lang {
             Language::En => match key {
                 "tab_profiles" => "Profiles",
