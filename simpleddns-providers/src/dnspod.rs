@@ -1,0 +1,339 @@
+use async_trait::async_trait;
+use simpleddns_core::provider::{DdnsProvider, ProviderError};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
+use tracing::{debug, info};
+
+pub struct DnspodProvider;
+
+impl Default for DnspodProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DnspodProvider {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct DnspodResponse {
+    pub status: DnspodStatus,
+    #[serde(rename = "records")]
+    records: Option<Vec<DnspodRecord>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct DnspodStatus {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct DnspodRecord {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub record_type: String,
+    pub value: String,
+    pub line: String,
+}
+
+#[derive(Serialize, Debug)]
+struct DnspodRecordRequest {
+    #[serde(rename = "login_token")]
+    login_token: String,
+    #[serde(rename = "format")]
+    format: String,
+    #[serde(rename = "domain")]
+    domain: String,
+    #[serde(rename = "sub_domain")]
+    sub_domain: String,
+    #[serde(rename = "record_type")]
+    record_type: String,
+    #[serde(rename = "value")]
+    value: String,
+    #[serde(rename = "record_line")]
+    record_line: String,
+    #[serde(rename = "ttl")]
+    ttl: i64,
+}
+
+#[derive(Serialize, Debug)]
+struct DnspodUpdateRequest {
+    #[serde(rename = "login_token")]
+    login_token: String,
+    #[serde(rename = "format")]
+    format: String,
+    #[serde(rename = "domain")]
+    domain: String,
+    #[serde(rename = "record_id")]
+    record_id: String,
+    #[serde(rename = "sub_domain")]
+    sub_domain: String,
+    #[serde(rename = "record_type")]
+    record_type: String,
+    #[serde(rename = "value")]
+    value: String,
+    #[serde(rename = "record_line")]
+    record_line: String,
+}
+
+#[derive(Serialize, Debug)]
+struct DnspodDeleteRequest {
+    #[serde(rename = "login_token")]
+    login_token: String,
+    #[serde(rename = "format")]
+    format: String,
+    #[serde(rename = "domain")]
+    domain: String,
+    #[serde(rename = "record_id")]
+    record_id: String,
+    #[serde(rename = "record_line")]
+    record_line: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct DnspodActionResponse {
+    pub status: DnspodStatus,
+    pub record: Option<DnspodRecordId>,
+}
+
+#[derive(Deserialize, Debug)]
+struct DnspodRecordId {
+    pub id: Option<String>,
+}
+
+fn build_login_token(id: &str, token: &str) -> String {
+    format!("{},{}", id, token)
+}
+
+async fn find_record(
+    client: &Client,
+    login_token: &str,
+    domain: &str,
+    sub_domain: &str,
+    record_type: &str,
+) -> Result<Option<DnspodRecord>, ProviderError> {
+    let params = [
+        ("login_token", login_token),
+        ("format", "json"),
+        ("domain", domain),
+        ("sub_domain", sub_domain),
+        ("record_type", record_type),
+        ("record_line", "默认"),
+    ];
+    
+    let url = "https://dnsapi.cn/Record.List";
+    let resp: DnspodResponse = client
+        .post(url)
+        .form(&params)
+        .send()
+        .await?
+        .json()
+        .await
+        .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
+    
+    if resp.status.code != "1" {
+        if resp.status.code == "-15" {
+            return Ok(None);
+        }
+        return Err(ProviderError::Api(format!(
+            "DNSPod API error: {} - {}",
+            resp.status.code, resp.status.message
+        )));
+    }
+    
+    if let Some(records) = resp.records {
+        if let Some(record) = records.into_iter().next() {
+            return Ok(Some(record));
+        }
+    }
+    
+    Ok(None)
+}
+
+async fn add_record(
+    client: &Client,
+    login_token: &str,
+    domain: &str,
+    sub_domain: &str,
+    record_type: &str,
+    value: &str,
+) -> Result<(), ProviderError> {
+    let params = [
+        ("login_token", login_token),
+        ("format", "json"),
+        ("domain", domain),
+        ("sub_domain", sub_domain),
+        ("record_type", record_type),
+        ("value", value),
+        ("record_line", "默认"),
+        ("ttl", "600"),
+    ];
+    
+    let url = "https://dnsapi.cn/Record.Create";
+    let resp: DnspodActionResponse = client
+        .post(url)
+        .form(&params)
+        .send()
+        .await?
+        .json()
+        .await
+        .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
+    
+    if resp.status.code != "1" {
+        return Err(ProviderError::Api(format!(
+            "DNSPod create record error: {} - {}",
+            resp.status.code, resp.status.message
+        )));
+    }
+    
+    info!("DNSPod: Created {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+    Ok(())
+}
+
+async fn update_record(
+    client: &Client,
+    login_token: &str,
+    domain: &str,
+    record_id: &str,
+    sub_domain: &str,
+    record_type: &str,
+    value: &str,
+) -> Result<(), ProviderError> {
+    let params = [
+        ("login_token", login_token),
+        ("format", "json"),
+        ("domain", domain),
+        ("record_id", record_id),
+        ("sub_domain", sub_domain),
+        ("record_type", record_type),
+        ("value", value),
+        ("record_line", "默认"),
+    ];
+    
+    let url = "https://dnsapi.cn/Record.Modify";
+    let resp: DnspodActionResponse = client
+        .post(url)
+        .form(&params)
+        .send()
+        .await?
+        .json()
+        .await
+        .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
+    
+    if resp.status.code != "1" {
+        return Err(ProviderError::Api(format!(
+            "DNSPod update record error: {} - {}",
+            resp.status.code, resp.status.message
+        )));
+    }
+    
+    info!("DNSPod: Updated {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+    Ok(())
+}
+
+#[async_trait]
+impl DdnsProvider for DnspodProvider {
+    fn id(&self) -> &'static str {
+        "dnspod"
+    }
+
+    async fn update_record(
+        &self,
+        domain: &str,
+        ipv4: Option<IpAddr>,
+        ipv6: Option<IpAddr>,
+        config: &serde_json::Value,
+        client: &Client,
+    ) -> Result<(), ProviderError> {
+        let login_token = config
+            .get("login_token")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ProviderError::Config("Missing login_token (format: id,token)".into()))?;
+        
+        let zone_name = config
+            .get("zone_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
+                if parts.len() >= 2 {
+                    format!("{}.{}", parts[1], parts[0])
+                } else {
+                    domain.to_string()
+                }
+            });
+        
+        let sub_domain = config
+            .get("sub_domain")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
+                if parts.len() >= 3 {
+                    parts[2..].iter().copied().rev().collect::<Vec<_>>().join(".")
+                } else {
+                    "@".to_string()
+                }
+            });
+        
+        debug!("DNSPod: zone={}, sub_domain={}", zone_name, sub_domain);
+        
+        if let Some(ip) = ipv4 {
+            let ip_str = ip.to_string();
+            
+            match find_record(client, login_token, &zone_name, &sub_domain, "A").await? {
+                Some(existing) => {
+                    if existing.value != ip_str {
+                        update_record(
+                            client,
+                            login_token,
+                            &zone_name,
+                            &existing.id,
+                            &sub_domain,
+                            "A",
+                            &ip_str,
+                        ).await?;
+                    } else {
+                        debug!("DNSPod: A record already up-to-date: {}", ip_str);
+                    }
+                }
+                None => {
+                    add_record(client, login_token, &zone_name, &sub_domain, "A", &ip_str).await?;
+                }
+            }
+        }
+        
+        if let Some(ip) = ipv6 {
+            let ip_str = ip.to_string();
+            
+            match find_record(client, login_token, &zone_name, &sub_domain, "AAAA").await? {
+                Some(existing) => {
+                    if existing.value != ip_str {
+                        update_record(
+                            client,
+                            login_token,
+                            &zone_name,
+                            &existing.id,
+                            &sub_domain,
+                            "AAAA",
+                            &ip_str,
+                        ).await?;
+                    } else {
+                        debug!("DNSPod: AAAA record already up-to-date: {}", ip_str);
+                    }
+                }
+                None => {
+                    add_record(client, login_token, &zone_name, &sub_domain, "AAAA", &ip_str).await?;
+                }
+            }
+        }
+        
+        Ok(())
+    }
+}

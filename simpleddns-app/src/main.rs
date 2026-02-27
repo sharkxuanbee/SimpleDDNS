@@ -3,8 +3,12 @@
 use simpleddns_core::models::DdnsProfile;
 use simpleddns_core::provider::DdnsProvider;
 use simpleddns_core::scheduler::{DdnsScheduler, SchedulerConfig, SharedLogs, SharedStatus};
+use simpleddns_providers::aliyun::AliyunProvider;
 use simpleddns_providers::cloudflare::CloudflareProvider;
+use simpleddns_providers::dnspod::DnspodProvider;
 use simpleddns_providers::generic::GenericHttpProvider;
+use simpleddns_providers::godaddy::GodaddyProvider;
+use simpleddns_providers::namecheap::NamecheapProvider;
 use simpleddns_storage::config::{AppConfig, FullExport, StorageManager};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -132,9 +136,14 @@ else {
 }
  fn build_providers() -> HashMap<String, Box<dyn DdnsProvider>> {
     let mut map: HashMap<String, Box<dyn DdnsProvider>> = HashMap::new();
-    map.insert(         "cloudflare".to_string(),         Box::new(CloudflareProvider::new()),     );
+    map.insert("aliyun".to_string(), Box::new(AliyunProvider::new()));
+    map.insert("cloudflare".to_string(), Box::new(CloudflareProvider::new()));
+    map.insert("dnspod".to_string(), Box::new(DnspodProvider::new()));
     map.insert("generic".to_string(), Box::new(GenericHttpProvider::new()));
-    map }
+    map.insert("godaddy".to_string(), Box::new(GodaddyProvider::new()));
+    map.insert("namecheap".to_string(), Box::new(NamecheapProvider::new()));
+    map
+}
  async fn spawn_scheduler(     statuses: SharedStatus,     logs: SharedLogs,     mut config_rx: watch::Receiver<SchedulerConfig>, ) -> watch::Sender<bool> {
     let (stop_tx, mut stop_rx) = watch::channel(false);
     let providers = build_providers();

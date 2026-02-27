@@ -2366,6 +2366,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hmac-sha1"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b05da5b9e5d4720bfb691eebb2b9d42da3570745da71eac8a1f5bb7e59aab88"
+dependencies = [
+ "hmac",
+ "sha1",
+]
+
+[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3038,6 +3048,12 @@ dependencies = [
  "cfg-if",
  "rayon",
 ]
+
+[[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "memchr"
@@ -4871,11 +4887,18 @@ name = "simpleddns-providers"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
+ "chrono",
+ "hex",
+ "hmac-sha1",
+ "md5",
  "reqwest",
  "serde",
  "serde_json",
  "simpleddns-core",
  "tracing",
+ "urlencoding",
+ "uuid",
 ]
 
 [[package]]
