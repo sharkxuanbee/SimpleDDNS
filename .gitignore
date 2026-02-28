@@ -1,5 +1,6 @@
 # Rust / Cargo
 /target/
+/target2/
 
 # OS
 Thumbs.db
@@ -15,9 +16,16 @@ Desktop.ini
 
 # App local data
 data/
+*.log
 
 # Build artifacts
 build_out.txt
+dist/
+*.exe
+*.zip
+*.msi
+*.deb
+*.rpm
 
 # Tool directories
 .gemini/

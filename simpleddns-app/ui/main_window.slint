@@ -1,0 +1,171 @@
+import { Button, ScrollView, Switch, HorizontalBox, VerticalBox, TextEdit } from "std-widgets.slint";
+
+export struct ProfileData {
+    id: string,
+    name: string,
+    domain: string,
+    ipv4: string,
+    ipv6: string,
+    last_update: string,
+    enabled: bool,
+    status_message: string,
+}
+
+export component MainWindow inherits Window {
+    title: "SimpleDDNS";
+    width: 850px;
+    height: 600px;
+    background: #f0f2f5;
+
+    in-out property <bool> global-running: true;
+    in-out property <[ProfileData]> profiles: [];
+    in-out property <string> logs-text: "";
+
+    callback toggle-global-running();
+    callback toggle-profile(string, bool);
+    callback trigger-update();
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 16px;
+
+        // Top bar
+        HorizontalBox {
+            padding: 0px;
+            alignment: space-between;
+            
+            Text {
+                text: "SimpleDDNS";
+                font-size: 24px;
+                font-weight: 700;
+                vertical-alignment: center;
+                color: #333;
+            }
+            
+            HorizontalBox {
+                spacing: 8px;
+                alignment: end;
+                
+                Button {
+                    text: "Update Now";
+                    clicked => { root.trigger-update(); }
+                }
+
+                Button {
+                    text: root.global-running ? "Stop" : "Start";
+                    primary: true;
+                    clicked => { root.toggle-global-running(); }
+                }
+            }
+        }
+        
+        // Main list
+        Rectangle {
+            background: white;
+            border-radius: 8px;
+            drop-shadow-blur: 8px;
+            drop-shadow-color: #00000010;
+            
+            VerticalBox {
+                padding: 16px;
+                spacing: 8px;
+                
+                Text {
+                    text: "Profiles";
+                    font-size: 18px;
+                    font-weight: 600;
+                }
+                
+                ScrollView {
+                    VerticalBox {
+                        spacing: 8px;
+                        padding: 0px;
+                        for profile in root.profiles : Rectangle {
+                            background: #fafafa;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #e0e0e0;
+                            
+                            HorizontalBox {
+                                padding: 12px;
+                                spacing: 12px;
+                                
+                                Switch {
+                                    checked: profile.enabled;
+                                    toggled => { root.toggle-profile(profile.id, self.checked); }
+                                }
+                                
+                                VerticalBox {
+                                    padding: 0px;
+                                    alignment: center;
+                                    width: 150px;
+                                    Text {
+                                        text: profile.name;
+                                        font-weight: 600;
+                                        font-size: 14px;
+                                    }
+                                    Text {
+                                        text: profile.domain;
+                                        font-size: 12px;
+                                        color: #666;
+                                    }
+                                }
+                                
+                                VerticalBox {
+                                    padding: 0px;
+                                    alignment: center;
+                                    width: 200px;
+                                    Text {
+                                        text: "IPv4: " + profile.ipv4;
+                                        font-size: 12px;
+                                    }
+                                    Text {
+                                        text: "IPv6: " + profile.ipv6;
+                                        font-size: 12px;
+                                    }
+                                }
+                                
+                                VerticalBox {
+                                    padding: 0px;
+                                    alignment: center;
+                                    width: 150px;
+                                    Text {
+                                        text: "Last: " + profile.last_update;
+                                        font-size: 12px;
+                                        color: #666;
+                                    }
+                                    Text {
+                                        text: profile.status_message;
+                                        font-size: 12px;
+                                        color: profile.status_message == "OK" ? #4caf50 : #f44336;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Logs
+        Rectangle {
+            background: #1e1e1e;
+            border-radius: 8px;
+            height: 150px;
+            
+            VerticalBox {
+                padding: 8px;
+                Text {
+                    text: "Logs";
+                    color: white;
+                    font-weight: 600;
+                    font-size: 14px;
+                }
+                TextEdit {
+                    text: root.logs-text;
+                    read-only: true;
+                }
+            }
+        }
+    }
+}
