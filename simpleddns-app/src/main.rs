@@ -2,6 +2,7 @@
 
 slint::include_modules!();
 
+use simpleddns_core::models::SchedulerEvent;
 use simpleddns_core::provider::DdnsProvider;
 use simpleddns_core::scheduler::{DdnsScheduler, SchedulerConfig, SharedLogs, SharedStatus};
 use simpleddns_providers::aliyun::AliyunProvider;
@@ -14,7 +15,7 @@ use simpleddns_storage::config::{AppConfig, StorageManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 use slint::{SharedString, VecModel};
 use tracing_subscriber::EnvFilter;
 
@@ -80,12 +81,13 @@ async fn spawn_scheduler(
     statuses: SharedStatus,
     logs: SharedLogs,
     mut config_rx: watch::Receiver<SchedulerConfig>,
+    event_tx: Option<mpsc::UnboundedSender<SchedulerEvent>>,
 ) -> watch::Sender<bool> {
     let (stop_tx, mut stop_rx) = watch::channel(false);
     let providers = build_providers();
 
     tokio::spawn(async move {
-        let scheduler = DdnsScheduler::new(statuses, logs);
+        let scheduler = DdnsScheduler::new(statuses, logs, event_tx);
         loop {
             if *stop_rx.borrow() {
                 break;
@@ -121,14 +123,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let statuses: SharedStatus = Arc::new(Mutex::new(HashMap::new()));
     let logs: SharedLogs = Arc::new(Mutex::new(Vec::new()));
+    
+    // Create event channel
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
     let sched_config = build_scheduler_config(&config, &storage);
     let (config_tx, config_rx) = watch::channel(sched_config);
 
     let statuses_clone = statuses.clone();
     let logs_clone = logs.clone();
+    
+    // Pass event_tx to scheduler
     let stop_tx = rt.block_on(async {
-        spawn_scheduler(statuses_clone, logs_clone, config_rx).await
+        spawn_scheduler(statuses_clone, logs_clone, config_rx, Some(event_tx)).await
     });
 
     let args: Vec<String> = std::env::args().collect();
@@ -237,56 +244,95 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        let update_timer = slint::Timer::default();
+        // Event handler loop
         {
-            let ui_handle_timer = ui_handle.clone();
-            let config_for_timer = config_arc.clone();
-            let statuses_for_timer = statuses.clone();
-            let logs_for_timer = logs.clone();
+            let ui_handle = ui_handle.clone();
+            let config_arc = config_arc.clone();
+            let statuses = statuses.clone();
+            
+            // Initial load of profiles
+            if let Some(ui) = ui_handle.upgrade() {
+                let config = config_arc.lock().unwrap();
+                let mut profile_data_list = Vec::new();
+                if let Ok(s) = statuses.try_lock() {
+                    for profile in &config.profiles {
+                        let status = s.get(&profile.id);
+                        let (ipv4, ipv6, last_update, status_message) = match status {
+                            Some(st) => (
+                                st.current_ipv4.clone().unwrap_or_default(),
+                                st.current_ipv6.clone().unwrap_or_default(),
+                                st.last_update.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_default(),
+                                st.status_message.clone(),
+                            ),
+                            None => (String::new(), String::new(), String::new(), String::from("Unknown")),
+                        };
+                        profile_data_list.push(ProfileData {
+                            id: SharedString::from(profile.id.clone()),
+                            name: SharedString::from(profile.name.clone()),
+                            domain: SharedString::from(profile.domain.clone()),
+                            ipv4: SharedString::from(ipv4),
+                            ipv6: SharedString::from(ipv6),
+                            last_update: SharedString::from(last_update),
+                            enabled: profile.enabled,
+                            status_message: SharedString::from(status_message),
+                        });
+                    }
+                }
+                let model = std::rc::Rc::new(VecModel::from(profile_data_list));
+                ui.set_profiles(model.into());
+            }
 
-            update_timer.start(
-                slint::TimerMode::Repeated,
-                std::time::Duration::from_secs(1),
-                move || {
-                    if let Some(ui) = ui_handle_timer.upgrade() {
-                        let config = config_for_timer.lock().unwrap();
-                        let mut profile_data_list = Vec::new();
-
-                        if let Ok(s) = statuses_for_timer.try_lock() {
-                            for profile in &config.profiles {
-                                let status = s.get(&profile.id);
-                                let (ipv4, ipv6, last_update, status_message) = match status {
-                                    Some(st) => (
-                                        st.current_ipv4.clone().unwrap_or_default(),
-                                        st.current_ipv6.clone().unwrap_or_default(),
-                                        st.last_update.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_default(),
-                                        st.status_message.clone(),
-                                    ),
-                                    None => (String::new(), String::new(), String::new(), String::from("Unknown")),
-                                };
-                                profile_data_list.push(ProfileData {
-                                    id: SharedString::from(profile.id.clone()),
-                                    name: SharedString::from(profile.name.clone()),
-                                    domain: SharedString::from(profile.domain.clone()),
-                                    ipv4: SharedString::from(ipv4),
-                                    ipv6: SharedString::from(ipv6),
-                                    last_update: SharedString::from(last_update),
-                                    enabled: profile.enabled,
-                                    status_message: SharedString::from(status_message),
-                                });
+            rt.spawn(async move {
+                while let Some(event) = event_rx.recv().await {
+                    let ui_handle = ui_handle.clone();
+                    let config_arc = config_arc.clone();
+                    let statuses = statuses.clone();
+                    
+                    slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = ui_handle.upgrade() {
+                            match event {
+                                SchedulerEvent::Log(msg) => {
+                                    let current = ui.get_logs_text();
+                                    ui.set_logs_text(current + "\n" + &msg);
+                                }
+                                SchedulerEvent::StatusUpdate(_) => {
+                                    // Refresh profile list
+                                    let config = config_arc.lock().unwrap();
+                                    let mut profile_data_list = Vec::new();
+                                    
+                                    // Lock statuses to get latest data
+                                    if let Ok(s) = statuses.try_lock() {
+                                        for profile in &config.profiles {
+                                            let status = s.get(&profile.id);
+                                            let (ipv4, ipv6, last_update, status_message) = match status {
+                                                Some(st) => (
+                                                    st.current_ipv4.clone().unwrap_or_default(),
+                                                    st.current_ipv6.clone().unwrap_or_default(),
+                                                    st.last_update.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_default(),
+                                                    st.status_message.clone(),
+                                                ),
+                                                None => (String::new(), String::new(), String::new(), String::from("Unknown")),
+                                            };
+                                            profile_data_list.push(ProfileData {
+                                                id: SharedString::from(profile.id.clone()),
+                                                name: SharedString::from(profile.name.clone()),
+                                                domain: SharedString::from(profile.domain.clone()),
+                                                ipv4: SharedString::from(ipv4),
+                                                ipv6: SharedString::from(ipv6),
+                                                last_update: SharedString::from(last_update),
+                                                enabled: profile.enabled,
+                                                status_message: SharedString::from(status_message),
+                                            });
+                                        }
+                                    }
+                                    let model = std::rc::Rc::new(VecModel::from(profile_data_list));
+                                    ui.set_profiles(model.into());
+                                }
                             }
                         }
-
-                        let model = std::rc::Rc::new(VecModel::from(profile_data_list));
-                        ui.set_profiles(model.into());
-
-                        if let Ok(l) = logs_for_timer.try_lock() {
-                            let text = l.join("\n");
-                            ui.set_logs_text(SharedString::from(text));
-                        }
-                    }
-                },
-            );
+                    }).unwrap();
+                }
+            });
         }
 
         ui.run()?;

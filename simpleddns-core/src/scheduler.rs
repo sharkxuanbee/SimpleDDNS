@@ -1,4 +1,4 @@
-use crate::models::{DdnsProfile, IpVersion, ProfileStatus};
+use crate::models::{DdnsProfile, IpVersion, ProfileStatus, SchedulerEvent};
 use crate::provider::DdnsProvider;
 use crate::resolver::{resolve_ip, ResolverError};
 use chrono::Utc;
@@ -6,19 +6,26 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 
 /// Shared state between the scheduler and the GUI.
 pub type SharedStatus = Arc<Mutex<HashMap<String, ProfileStatus>>>;
 pub type SharedLogs = Arc<Mutex<Vec<String>>>;
+
 pub struct DdnsScheduler {
     client: Client,
     statuses: SharedStatus,
     logs: SharedLogs,
+    event_tx: Option<mpsc::UnboundedSender<SchedulerEvent>>,
 }
+
 impl DdnsScheduler {
-    pub fn new(statuses: SharedStatus, logs: SharedLogs) -> Self {
+    pub fn new(
+        statuses: SharedStatus,
+        logs: SharedLogs,
+        event_tx: Option<mpsc::UnboundedSender<SchedulerEvent>>,
+    ) -> Self {
         Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(15))
@@ -26,8 +33,10 @@ impl DdnsScheduler {
                 .unwrap_or_else(|_| Client::new()),
             statuses,
             logs,
+            event_tx,
         }
     }
+
     fn log(&self, logs: &mut Vec<String>, mut msg: String) {
         if msg.len() > 256 {
             msg.truncate(253);
@@ -35,12 +44,17 @@ impl DdnsScheduler {
         }
         let ts = Utc::now().format("%H:%M:%S");
         let entry = format!("[{}] {}", ts, msg);
-        logs.push(entry);
+        logs.push(entry.clone());
         // Keep last 100 log entries to save memory
         if logs.len() > 100 {
             logs.drain(0..logs.len() - 100);
         }
+        
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(SchedulerEvent::Log(entry));
+        }
     }
+
     pub async fn run_once(
         &self,
         profiles: &[DdnsProfile],
@@ -62,6 +76,7 @@ impl DdnsScheduler {
                     continue;
                 }
             };
+
             // Resolve IPv4
             let ipv4 = if profile.enable_ipv4 && !ipv4_urls.is_empty() {
                 match self.resolve_first(ipv4_urls, IpVersion::IPv4).await {
@@ -74,10 +89,10 @@ impl DdnsScheduler {
                         None
                     }
                 }
-            }
-else {
+            } else {
                 None
             };
+
             // Resolve IPv6
             let ipv6 = if profile.enable_ipv6 && !ipv6_urls.is_empty() {
                 match self.resolve_first(ipv6_urls, IpVersion::IPv6).await {
@@ -90,10 +105,10 @@ else {
                         None
                     }
                 }
-            }
-else {
+            } else {
                 None
             };
+
             if ipv4.is_none() && ipv6.is_none() {
                 let msg = format!("[{}] No IP resolved, skipping update", profile.name);
                 info!("{}", msg);
@@ -101,6 +116,7 @@ else {
                 self.log(&mut logs, msg);
                 continue;
             }
+
             // Read token from provider_config (will be populated from keyring at app level)
             let config = &profile.provider_config;
             match provider
@@ -109,9 +125,7 @@ else {
             {
                 Ok(()) => {
                     let msg = format!(
-                        "[{}] Updated {}
-- IPv4: {}
-IPv6: {}",
+                        "[{}] Updated {}\n- IPv4: {}\n- IPv6: {}",
                         profile.name,
                         profile.domain,
                         ipv4.map(|ip| ip.to_string()).unwrap_or_else(|| "N/A".into()),
@@ -120,42 +134,50 @@ IPv6: {}",
                     info!("{}", msg);
                     let mut logs = self.logs.lock().await;
                     self.log(&mut logs, msg);
+                    
+                    let status = ProfileStatus {
+                        profile_id: profile.id.clone(),
+                        last_update: Some(Utc::now()),
+                        current_ipv4: ipv4.map(|ip| ip.to_string()),
+                        current_ipv6: ipv6.map(|ip| ip.to_string()),
+                        status_message: "OK".into(),
+                        is_running: false,
+                    };
+
                     let mut statuses = self.statuses.lock().await;
-                    statuses.insert(
-                        profile.id.clone(),
-                        ProfileStatus {
-                            profile_id: profile.id.clone(),
-                            last_update: Some(Utc::now()),
-                            current_ipv4: ipv4.map(|ip| ip.to_string()),
-                            current_ipv6: ipv6.map(|ip| ip.to_string()),
-                            status_message: "OK".into(),
-                            is_running: false,
-                        },
-                    );
+                    statuses.insert(profile.id.clone(), status.clone());
+                    
+                    if let Some(tx) = &self.event_tx {
+                        let _ = tx.send(SchedulerEvent::StatusUpdate(status));
+                    }
                 }
                 Err(e) => {
                     let msg = format!("[{}] Update failed: {}", profile.name, e);
                     error!("{}", msg);
                     let mut logs = self.logs.lock().await;
                     self.log(&mut logs, msg);
+                    
+                    let status = ProfileStatus {
+                        profile_id: profile.id.clone(),
+                        last_update: Some(Utc::now()),
+                        current_ipv4: ipv4.map(|ip| ip.to_string()),
+                        current_ipv6: ipv6.map(|ip| ip.to_string()),
+                        status_message: format!("Error: {}", e),
+                        is_running: false,
+                    };
+
                     let mut statuses = self.statuses.lock().await;
-                    statuses.insert(
-                        profile.id.clone(),
-                        ProfileStatus {
-                            profile_id: profile.id.clone(),
-                            last_update: Some(Utc::now()),
-                            current_ipv4: ipv4.map(|ip| ip.to_string()),
-                            current_ipv6: ipv6.map(|ip| ip.to_string()),
-                            status_message: format!("Error: {}", e),
-                            is_running: false,
-                        },
-                    );
+                    statuses.insert(profile.id.clone(), status.clone());
+                    
+                    if let Some(tx) = &self.event_tx {
+                        let _ = tx.send(SchedulerEvent::StatusUpdate(status));
+                    }
                 }
             }
         }
     }
-    
-/// Try each URL in order until one succeeds.
+
+    /// Try each URL in order until one succeeds.
     async fn resolve_first(
         &self,
         urls: &[String],

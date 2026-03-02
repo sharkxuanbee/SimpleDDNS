@@ -39,3 +39,9 @@ pub struct ProfileStatus {
     pub status_message: String,
     pub is_running: bool,
 }
+
+#[derive(Debug, Clone)]
+pub enum SchedulerEvent {
+    Log(String),
+    StatusUpdate(ProfileStatus),
+}
