@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::net::IpAddr;
 use tracing::{debug, info};
 
@@ -35,80 +35,12 @@ struct DnspodStatus {
 #[derive(Deserialize, Debug)]
 struct DnspodRecord {
     pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub record_type: String,
     pub value: String,
-    pub line: String,
-}
-
-#[derive(Serialize, Debug)]
-struct DnspodRecordRequest {
-    #[serde(rename = "login_token")]
-    login_token: String,
-    #[serde(rename = "format")]
-    format: String,
-    #[serde(rename = "domain")]
-    domain: String,
-    #[serde(rename = "sub_domain")]
-    sub_domain: String,
-    #[serde(rename = "record_type")]
-    record_type: String,
-    #[serde(rename = "value")]
-    value: String,
-    #[serde(rename = "record_line")]
-    record_line: String,
-    #[serde(rename = "ttl")]
-    ttl: i64,
-}
-
-#[derive(Serialize, Debug)]
-struct DnspodUpdateRequest {
-    #[serde(rename = "login_token")]
-    login_token: String,
-    #[serde(rename = "format")]
-    format: String,
-    #[serde(rename = "domain")]
-    domain: String,
-    #[serde(rename = "record_id")]
-    record_id: String,
-    #[serde(rename = "sub_domain")]
-    sub_domain: String,
-    #[serde(rename = "record_type")]
-    record_type: String,
-    #[serde(rename = "value")]
-    value: String,
-    #[serde(rename = "record_line")]
-    record_line: String,
-}
-
-#[derive(Serialize, Debug)]
-struct DnspodDeleteRequest {
-    #[serde(rename = "login_token")]
-    login_token: String,
-    #[serde(rename = "format")]
-    format: String,
-    #[serde(rename = "domain")]
-    domain: String,
-    #[serde(rename = "record_id")]
-    record_id: String,
-    #[serde(rename = "record_line")]
-    record_line: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct DnspodActionResponse {
     pub status: DnspodStatus,
-    pub record: Option<DnspodRecordId>,
-}
-
-#[derive(Deserialize, Debug)]
-struct DnspodRecordId {
-    pub id: Option<String>,
-}
-
-fn build_login_token(id: &str, token: &str) -> String {
-    format!("{},{}", id, token)
 }
 
 async fn find_record(

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::net::IpAddr;
 use tracing::{debug, info};
 
@@ -19,21 +19,6 @@ impl GodaddyProvider {
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct GodaddyResponse {
-    pub code: Option<String>,
-    pub message: Option<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct GodaddyRecord {
-    #[serde(rename = "type")]
-    record_type: String,
-    name: String,
-    data: String,
-    ttl: Option<i64>,
-}
-
 #[derive(Serialize, Debug)]
 struct GodaddyRecordRequest {
     #[serde(rename = "type")]
@@ -45,38 +30,6 @@ struct GodaddyRecordRequest {
 
 fn build_auth_header(key: &str, secret: &str) -> String {
     format!("sso-key {}:{}", key, secret)
-}
-
-async fn find_record(
-    client: &Client,
-    key: &str,
-    secret: &str,
-    domain: &str,
-    name: &str,
-    record_type: &str,
-) -> Result<Option<GodaddyRecord>, ProviderError> {
-    let url = format!(
-        "https://api.godaddy.com/v1/domains/{}/records/{}/{}",
-        domain, record_type, name
-    );
-    
-    let auth = build_auth_header(key, secret);
-    
-    let resp: Vec<GodaddyRecord> = client
-        .get(&url)
-        .header("Authorization", auth)
-        .header("Content-Type", "application/json")
-        .send()
-        .await?
-        .json()
-        .await
-        .map_err(|e| ProviderError::Api(format!("Failed to find record: {}", e)))?;
-    
-    if let Some(record) = resp.into_iter().next() {
-        Ok(Some(record))
-    } else {
-        Ok(None)
-    }
 }
 
 async fn set_record(

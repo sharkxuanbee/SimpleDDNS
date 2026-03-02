@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::net::IpAddr;
 use std::collections::BTreeMap;
 use base64::Engine;
@@ -22,24 +22,7 @@ impl AliyunProvider {
 }
 
 #[derive(Deserialize, Debug)]
-struct AliyunDescribeDomainsResponse {
-    pub request_id: String,
-    pub domains: Option<AliyunDomains>,
-}
-
-#[derive(Deserialize, Debug)]
-struct AliyunDomains {
-    pub domain: Option<Vec<AliyunDomain>>,
-}
-
-#[derive(Deserialize, Debug)]
-struct AliyunDomain {
-    pub domain_name: String,
-}
-
-#[derive(Deserialize, Debug)]
 struct AliyunDescribeRecordResponse {
-    pub request_id: String,
     pub records: Option<AliyunRecords>,
 }
 
@@ -51,22 +34,13 @@ struct AliyunRecords {
 #[derive(Deserialize, Debug)]
 struct AliyunRecord {
     pub record_id: String,
-    pub rr: String,
-    #[serde(rename = "type")]
-    pub record_type: String,
     pub value: String,
 }
 
-#[derive(Serialize, Debug)]
-struct AliyunAddRecordRequest {
-    #[serde(rename = "RR")]
-    rr: String,
-    #[serde(rename = "Type")]
-    record_type: String,
-    #[serde(rename = "Value")]
-    value: String,
-    #[serde(rename = "TTL")]
-    ttl: i64,
+struct AliyunContext<'a> {
+    client: &'a Client,
+    access_key_id: &'a str,
+    access_key_secret: &'a str,
 }
 
 fn sign(secret: &str, params: &BTreeMap<String, String>) -> String {
@@ -77,13 +51,11 @@ fn sign(secret: &str, params: &BTreeMap<String, String>) -> String {
     
     let key = format!("{}&", secret);
     let mac = hmac_sha1::hmac_sha1(key.as_bytes(), string_to_sign.as_bytes());
-    base64::engine::general_purpose::STANDARD.encode(&mac)
+    base64::engine::general_purpose::STANDARD.encode(mac)
 }
 
 async fn find_record(
-    client: &Client,
-    access_key_id: &str,
-    access_key_secret: &str,
+    ctx: &AliyunContext<'_>,
     domain: &str,
     record_type: &str,
 ) -> Result<Option<AliyunRecord>, ProviderError> {
@@ -91,7 +63,7 @@ async fn find_record(
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     params.insert("Format".to_string(), "JSON".to_string());
     params.insert("Version".to_string(), "2015-01-09".to_string());
-    params.insert("AccessKeyId".to_string(), access_key_id.to_string());
+    params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
     params.insert("Timestamp".to_string(), timestamp.clone());
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
@@ -100,11 +72,11 @@ async fn find_record(
     params.insert("SubDomain".to_string(), domain.to_string());
     params.insert("Type".to_string(), record_type.to_string());
     
-    let signature = sign(access_key_secret, &params);
+    let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
     
     let url = "https://alidns.aliyuncs.com/";
-    let resp: AliyunDescribeRecordResponse = client
+    let resp: AliyunDescribeRecordResponse = ctx.client
         .post(url)
         .form(&params)
         .send()
@@ -115,7 +87,7 @@ async fn find_record(
     
     if let Some(records) = resp.records {
         if let Some(record_list) = records.record {
-            for record in record_list {
+            if let Some(record) = record_list.into_iter().next() {
                 return Ok(Some(record));
             }
         }
@@ -124,9 +96,7 @@ async fn find_record(
 }
 
 async fn add_record(
-    client: &Client,
-    access_key_id: &str,
-    access_key_secret: &str,
+    ctx: &AliyunContext<'_>,
     domain: &str,
     sub_domain: &str,
     record_type: &str,
@@ -136,7 +106,7 @@ async fn add_record(
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     params.insert("Format".to_string(), "JSON".to_string());
     params.insert("Version".to_string(), "2015-01-09".to_string());
-    params.insert("AccessKeyId".to_string(), access_key_id.to_string());
+    params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
     params.insert("Timestamp".to_string(), timestamp.clone());
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
@@ -148,11 +118,11 @@ async fn add_record(
     params.insert("Value".to_string(), value.to_string());
     params.insert("TTL".to_string(), "600".to_string());
     
-    let signature = sign(access_key_secret, &params);
+    let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
     
     let url = "https://alidns.aliyuncs.com/";
-    let resp = client
+    let resp = ctx.client
         .post(url)
         .form(&params)
         .send()
@@ -168,9 +138,7 @@ async fn add_record(
 }
 
 async fn update_record(
-    client: &Client,
-    access_key_id: &str,
-    access_key_secret: &str,
+    ctx: &AliyunContext<'_>,
     record_id: &str,
     domain: &str,
     sub_domain: &str,
@@ -181,7 +149,7 @@ async fn update_record(
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     params.insert("Format".to_string(), "JSON".to_string());
     params.insert("Version".to_string(), "2015-01-09".to_string());
-    params.insert("AccessKeyId".to_string(), access_key_id.to_string());
+    params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
     params.insert("Timestamp".to_string(), timestamp.clone());
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
@@ -193,11 +161,11 @@ async fn update_record(
     params.insert("Value".to_string(), value.to_string());
     params.insert("TTL".to_string(), "600".to_string());
     
-    let signature = sign(access_key_secret, &params);
+    let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
     
     let url = "https://alidns.aliyuncs.com/";
-    let resp = client
+    let resp = ctx.client
         .post(url)
         .form(&params)
         .send()
@@ -235,6 +203,12 @@ impl DdnsProvider for AliyunProvider {
             .get("access_key_secret")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ProviderError::Config("Missing access_key_secret".into()))?;
+
+        let ctx = AliyunContext {
+            client,
+            access_key_id,
+            access_key_secret,
+        };
         
         let zone_name = config
             .get("zone_name")
@@ -272,13 +246,11 @@ impl DdnsProvider for AliyunProvider {
                 format!("{}.{}", sub_domain, zone_name)
             };
             
-            match find_record(client, access_key_id, access_key_secret, &full_domain, "A").await? {
+            match find_record(&ctx, &full_domain, "A").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
                         update_record(
-                            client,
-                            access_key_id,
-                            access_key_secret,
+                            &ctx,
                             &existing.record_id,
                             &zone_name,
                             &sub_domain,
@@ -290,7 +262,7 @@ impl DdnsProvider for AliyunProvider {
                     }
                 }
                 None => {
-                    add_record(client, access_key_id, access_key_secret, &zone_name, &sub_domain, "A", &ip_str).await?;
+                    add_record(&ctx, &zone_name, &sub_domain, "A", &ip_str).await?;
                 }
             }
         }
@@ -303,13 +275,11 @@ impl DdnsProvider for AliyunProvider {
                 format!("{}.{}", sub_domain, zone_name)
             };
             
-            match find_record(client, access_key_id, access_key_secret, &full_domain, "AAAA").await? {
+            match find_record(&ctx, &full_domain, "AAAA").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
                         update_record(
-                            client,
-                            access_key_id,
-                            access_key_secret,
+                            &ctx,
                             &existing.record_id,
                             &zone_name,
                             &sub_domain,
@@ -321,7 +291,7 @@ impl DdnsProvider for AliyunProvider {
                     }
                 }
                 None => {
-                    add_record(client, access_key_id, access_key_secret, &zone_name, &sub_domain, "AAAA", &ip_str).await?;
+                    add_record(&ctx, &zone_name, &sub_domain, "AAAA", &ip_str).await?;
                 }
             }
         }
