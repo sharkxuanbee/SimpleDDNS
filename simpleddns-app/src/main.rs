@@ -2,7 +2,7 @@
 
 slint::include_modules!();
 
-use simpleddns_core::models::SchedulerEvent;
+use simpleddns_core::models::{DdnsProfile, SchedulerEvent};
 use simpleddns_core::provider::DdnsProvider;
 use simpleddns_core::scheduler::{DdnsScheduler, SchedulerConfig, SharedLogs, SharedStatus};
 use simpleddns_providers::aliyun::AliyunProvider;
@@ -111,6 +111,79 @@ async fn spawn_scheduler(
 
     stop_tx
 }
+
+// Helper to construct provider_config JSON from UI inputs
+fn build_provider_config(provider: &str, k1: &str, k2: &str, domain: &str, subdomain: &str) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    
+    // Common fields
+    map.insert("zone_name".to_string(), serde_json::Value::String(domain.to_string()));
+    map.insert("sub_domain".to_string(), serde_json::Value::String(subdomain.to_string()));
+
+    match provider {
+        "aliyun" => {
+            map.insert("access_key_id".to_string(), serde_json::Value::String(k1.to_string()));
+            map.insert("access_key_secret".to_string(), serde_json::Value::String(k2.to_string()));
+        }
+        "cloudflare" => {
+            map.insert("token".to_string(), serde_json::Value::String(k1.to_string()));
+            // zone_id is optional, maybe support later or put in k2 if needed, but for now stick to simple
+        }
+        "dnspod" => {
+             // login_token format: "id,token"
+             // UI provides id in k1, token in k2
+             let token_val = format!("{},{}", k1, k2);
+             map.insert("login_token".to_string(), serde_json::Value::String(token_val));
+        }
+        "godaddy" => {
+            map.insert("key".to_string(), serde_json::Value::String(k1.to_string()));
+            map.insert("secret".to_string(), serde_json::Value::String(k2.to_string()));
+        }
+        "namecheap" => {
+            map.insert("api_user".to_string(), serde_json::Value::String(k1.to_string()));
+            map.insert("api_key".to_string(), serde_json::Value::String(k2.to_string()));
+            // namecheap needs client_ip, user_name. We might need more inputs or auto-detect.
+            // For now assume user manually edits config for advanced stuff if UI is simple.
+            // Or add defaults.
+        }
+        _ => {
+            // generic, etc.
+        }
+    }
+    serde_json::Value::Object(map)
+}
+
+// Helper to extract UI inputs from provider_config JSON
+fn extract_provider_config(provider: &str, config: &serde_json::Value) -> (String, String) {
+    match provider {
+        "aliyun" => (
+            config.get("access_key_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            config.get("access_key_secret").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        ),
+        "cloudflare" => (
+            config.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            "".to_string(),
+        ),
+        "dnspod" => {
+            let token = config.get("login_token").and_then(|v| v.as_str()).unwrap_or("");
+            if let Some((id, secret)) = token.split_once(',') {
+                (id.to_string(), secret.to_string())
+            } else {
+                (token.to_string(), "".to_string())
+            }
+        },
+        "godaddy" => (
+            config.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            config.get("secret").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        ),
+        "namecheap" => (
+            config.get("api_user").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            config.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        ),
+        _ => ("".to_string(), "".to_string()),
+    }
+}
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().expect("Failed to create tokio runtime");
@@ -240,6 +313,97 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let notify_scheduler = notify_scheduler.clone();
             ui.on_trigger_update(move || {
+                notify_scheduler();
+            });
+        }
+
+        // Delete Profile
+        {
+            let notify_scheduler = notify_scheduler.clone();
+            let config_arc = config_arc.clone();
+            let storage = storage_arc.clone();
+            let statuses = statuses.clone();
+            ui.on_delete_profile(move |id| {
+                 let id_str = id.to_string();
+                 let mut cfg = config_arc.lock().unwrap();
+                 let len_before = cfg.profiles.len();
+                 cfg.profiles.retain(|p| p.id != id_str);
+                 
+                 if cfg.profiles.len() < len_before {
+                     let _ = storage.lock().unwrap().save_config(&cfg);
+                     // Also remove status
+                     if let Ok(mut s) = statuses.try_lock() {
+                         s.remove(&id_str);
+                     }
+                     notify_scheduler();
+                 }
+            });
+        }
+
+        // Edit Profile Request (Load data into dialog)
+        {
+            let config_arc = config_arc.clone();
+            let ui_handle = ui_handle.clone();
+            ui.on_edit_profile_request(move |id| {
+                let id_str = id.to_string();
+                let cfg = config_arc.lock().unwrap();
+                if let Some(p) = cfg.profiles.iter().find(|p| p.id == id_str) {
+                    if let Some(ui) = ui_handle.upgrade() {
+                        let (k1, k2) = extract_provider_config(&p.provider_type, &p.provider_config);
+                        ui.set_d_id(SharedString::from(p.id.clone()));
+                        ui.set_d_name(SharedString::from(p.name.clone()));
+                        ui.set_d_provider(SharedString::from(p.provider_type.clone()));
+                        ui.set_d_domain(SharedString::from(p.domain.clone()));
+                        // Try to extract sub_domain from provider_config, fallback to parsing domain if missing
+                        let sub_domain = p.provider_config.get("sub_domain").and_then(|v| v.as_str()).unwrap_or("");
+                        ui.set_d_subdomain(SharedString::from(sub_domain));
+                        
+                        ui.set_d_key1(SharedString::from(k1));
+                        ui.set_d_key2(SharedString::from(k2));
+                        ui.set_d_v4(p.enable_ipv4);
+                        ui.set_d_v6(p.enable_ipv6);
+                        ui.set_show_dialog(true);
+                    }
+                }
+            });
+        }
+
+        // Save Profile (Add or Update)
+        {
+            let notify_scheduler = notify_scheduler.clone();
+            let config_arc = config_arc.clone();
+            let storage = storage_arc.clone();
+            ui.on_save_profile(move |id, name, provider, domain, subdomain, k1, k2, v4, v6| {
+                let mut cfg = config_arc.lock().unwrap();
+                let id_str = id.to_string();
+                let provider_config = build_provider_config(&provider, &k1, &k2, &domain, &subdomain);
+                
+                if id_str.is_empty() {
+                    // Create new
+                    let new_profile = DdnsProfile {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        name: name.to_string(),
+                        provider_type: provider.to_string(),
+                        domain: domain.to_string(),
+                        enable_ipv4: v4,
+                        enable_ipv6: v6,
+                        enabled: true,
+                        provider_config,
+                    };
+                    cfg.profiles.push(new_profile);
+                } else {
+                    // Update existing
+                    if let Some(p) = cfg.profiles.iter_mut().find(|p| p.id == id_str) {
+                        p.name = name.to_string();
+                        p.provider_type = provider.to_string();
+                        p.domain = domain.to_string();
+                        p.enable_ipv4 = v4;
+                        p.enable_ipv6 = v6;
+                        p.provider_config = provider_config;
+                    }
+                }
+                
+                let _ = storage.lock().unwrap().save_config(&cfg);
                 notify_scheduler();
             });
         }

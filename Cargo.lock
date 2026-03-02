@@ -5719,6 +5719,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tray-icon",
+ "uuid",
  "windows 0.58.0",
  "winres",
 ]
