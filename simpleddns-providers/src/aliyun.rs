@@ -75,6 +75,7 @@ async fn find_record(
     params.insert("Action".to_string(), "DescribeSubDomainRecords".to_string());
     params.insert("SubDomain".to_string(), domain.to_string());
     params.insert("Type".to_string(), record_type.to_string());
+    params.insert("PageSize".to_string(), "500".to_string());
 
     let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);

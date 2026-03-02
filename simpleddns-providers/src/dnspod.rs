@@ -50,6 +50,7 @@ async fn find_record(
     domain: &str,
     sub_domain: &str,
     record_type: &str,
+    record_line: &str,
 ) -> Result<Option<DnspodRecord>, ProviderError> {
     let params = [
         ("login_token", login_token),
@@ -57,7 +58,7 @@ async fn find_record(
         ("domain", domain),
         ("sub_domain", sub_domain),
         ("record_type", record_type),
-        ("record_line", "默认"),
+        ("record_line", record_line),
     ];
 
     let url = "https://dnsapi.cn/Record.List";
@@ -96,6 +97,7 @@ async fn add_record(
     sub_domain: &str,
     record_type: &str,
     value: &str,
+    record_line: &str,
 ) -> Result<(), ProviderError> {
     let params = [
         ("login_token", login_token),
@@ -104,7 +106,7 @@ async fn add_record(
         ("sub_domain", sub_domain),
         ("record_type", record_type),
         ("value", value),
-        ("record_line", "默认"),
+        ("record_line", record_line),
         ("ttl", "600"),
     ];
 
@@ -140,6 +142,7 @@ async fn update_record(
     sub_domain: &str,
     record_type: &str,
     value: &str,
+    record_line: &str,
 ) -> Result<(), ProviderError> {
     let params = [
         ("login_token", login_token),
@@ -149,7 +152,7 @@ async fn update_record(
         ("sub_domain", sub_domain),
         ("record_type", record_type),
         ("value", value),
-        ("record_line", "默认"),
+        ("record_line", record_line),
     ];
 
     let url = "https://dnsapi.cn/Record.Modify";
@@ -215,12 +218,17 @@ impl DdnsProvider for DnspodProvider {
                 sub
             });
 
-        debug!("DNSPod: zone={}, sub_domain={}", zone_name, sub_domain);
+        let record_line = config
+            .get("record_line")
+            .and_then(|v| v.as_str())
+            .unwrap_or("默认");
+
+        debug!("DNSPod: zone={}, sub_domain={}, record_line={}", zone_name, sub_domain, record_line);
 
         if let Some(ip) = ipv4 {
             let ip_str = ip.to_string();
 
-            match find_record(client, login_token, &zone_name, &sub_domain, "A").await? {
+            match find_record(client, login_token, &zone_name, &sub_domain, "A", record_line).await? {
                 Some(existing) => {
                     if existing.value != ip_str {
                         update_record(
@@ -231,6 +239,7 @@ impl DdnsProvider for DnspodProvider {
                             &sub_domain,
                             "A",
                             &ip_str,
+                            record_line,
                         )
                         .await?;
                     } else {
@@ -238,7 +247,7 @@ impl DdnsProvider for DnspodProvider {
                     }
                 }
                 None => {
-                    add_record(client, login_token, &zone_name, &sub_domain, "A", &ip_str).await?;
+                    add_record(client, login_token, &zone_name, &sub_domain, "A", &ip_str, record_line).await?;
                 }
             }
         }
@@ -246,7 +255,7 @@ impl DdnsProvider for DnspodProvider {
         if let Some(ip) = ipv6 {
             let ip_str = ip.to_string();
 
-            match find_record(client, login_token, &zone_name, &sub_domain, "AAAA").await? {
+            match find_record(client, login_token, &zone_name, &sub_domain, "AAAA", record_line).await? {
                 Some(existing) => {
                     if existing.value != ip_str {
                         update_record(
@@ -257,6 +266,7 @@ impl DdnsProvider for DnspodProvider {
                             &sub_domain,
                             "AAAA",
                             &ip_str,
+                            record_line,
                         )
                         .await?;
                     } else {
@@ -271,6 +281,7 @@ impl DdnsProvider for DnspodProvider {
                         &sub_domain,
                         "AAAA",
                         &ip_str,
+                        record_line,
                     )
                     .await?;
                 }

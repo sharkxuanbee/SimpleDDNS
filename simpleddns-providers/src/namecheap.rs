@@ -120,6 +120,7 @@ impl DdnsProvider for NamecheapProvider {
         // Namecheap DDNS endpoint does not support AAAA records
         if ipv6.is_some() {
             debug!("Namecheap: IPv6 (AAAA) records are not supported by the DDNS endpoint");
+            return Err(ProviderError::Config("Namecheap DDNS does not support IPv6/AAAA records".into()));
         }
 
         Ok(())

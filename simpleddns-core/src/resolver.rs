@@ -58,6 +58,8 @@ fn resolve_local(version: IpVersion) -> Result<IpAddr, ResolverError> {
         IpVersion::IPv4 => {
             let socket = std::net::UdpSocket::bind("0.0.0.0:0")
                 .map_err(|_| ResolverError::NoLocalAddress)?;
+            let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+            let _ = socket.set_write_timeout(Some(std::time::Duration::from_secs(3)));
             socket
                 .connect("8.8.8.8:80")
                 .map_err(|_| ResolverError::NoLocalAddress)?;
@@ -68,6 +70,8 @@ fn resolve_local(version: IpVersion) -> Result<IpAddr, ResolverError> {
         }
         IpVersion::IPv6 => {
             let socket = std::net::UdpSocket::bind("[::]:0").map_err(|_| ResolverError::NoLocalAddress)?;
+            let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+            let _ = socket.set_write_timeout(Some(std::time::Duration::from_secs(3)));
             socket
                 .connect("[2001:4860:4860::8888]:80")
                 .map_err(|_| ResolverError::NoLocalAddress)?;

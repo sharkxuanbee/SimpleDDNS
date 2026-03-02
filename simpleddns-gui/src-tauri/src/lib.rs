@@ -246,7 +246,7 @@ async fn toggle_profile(
 #[tauri::command]
 async fn get_logs(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let logs = state.logs.lock().await;
-    Ok(logs.clone())
+    Ok(logs.iter().cloned().collect())
 }
 
 #[tauri::command]
@@ -308,7 +308,7 @@ pub fn run() {
             storage.inject_secrets_into_profiles(&mut config.profiles);
 
             let statuses: SharedStatus = Arc::new(TokioMutex::new(HashMap::new()));
-            let logs: SharedLogs = Arc::new(TokioMutex::new(Vec::new()));
+            let logs: SharedLogs = Arc::new(TokioMutex::new(std::collections::VecDeque::new()));
             let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
             let running = true;

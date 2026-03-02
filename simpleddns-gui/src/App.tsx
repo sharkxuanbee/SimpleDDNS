@@ -197,6 +197,19 @@ function App() {
   };
 
   const handleSave = async () => {
+    if (!formName.trim()) {
+      alert("Profile name is required.");
+      return;
+    }
+    if (!formDomain.trim()) {
+      alert("Domain (Zone) is required.");
+      return;
+    }
+    if (formProvider !== "generic" && !formKey1.trim()) {
+      alert("API Key/Token is required.");
+      return;
+    }
+
     // Build provider config
     const config: any = {
       zone_name: formDomain,
@@ -478,11 +491,12 @@ function App() {
                 />
                 IPv4
               </label>
-              <label className="checkbox-label">
+              <label className="checkbox-label" style={{ opacity: formProvider === "namecheap" ? 0.5 : 1 }}>
                 <input
                   type="checkbox"
-                  checked={formV6}
+                  checked={formProvider === "namecheap" ? false : formV6}
                   onChange={(e) => setFormV6(e.target.checked)}
+                  disabled={formProvider === "namecheap"}
                 />
                 IPv6
               </label>

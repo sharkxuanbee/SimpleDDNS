@@ -3,7 +3,7 @@ use crate::provider::DdnsProvider;
 use crate::resolver::{resolve_ip, ResolverError};
 use chrono::Utc;
 use reqwest::Client;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 
 /// Shared state between the scheduler and the GUI.
 pub type SharedStatus = Arc<Mutex<HashMap<String, ProfileStatus>>>;
-pub type SharedLogs = Arc<Mutex<Vec<String>>>;
+pub type SharedLogs = Arc<Mutex<VecDeque<String>>>;
 
 pub struct DdnsScheduler {
     client: Client,
@@ -37,17 +37,17 @@ impl DdnsScheduler {
         }
     }
 
-    fn log(&self, logs: &mut Vec<String>, mut msg: String) {
+    fn log(&self, logs: &mut VecDeque<String>, mut msg: String) {
         if msg.len() > 256 {
             msg.truncate(253);
             msg.push_str("...");
         }
         let ts = Utc::now().format("%H:%M:%S");
         let entry = format!("[{}] {}", ts, msg);
-        logs.push(entry.clone());
+        logs.push_back(entry.clone());
         // Keep last 100 log entries to save memory
-        if logs.len() > 100 {
-            logs.drain(0..logs.len() - 100);
+        while logs.len() > 100 {
+            logs.pop_front();
         }
         
         if let Some(tx) = &self.event_tx {
@@ -72,7 +72,24 @@ impl DdnsScheduler {
                     );
                     warn!("{}", msg);
                     let mut logs = self.logs.lock().await;
-                    self.log(&mut logs, msg);
+                    self.log(&mut logs, msg.clone());
+                    
+                    let status = ProfileStatus {
+                        profile_id: profile.id.clone(),
+                        last_update: Some(Utc::now()),
+                        current_ipv4: None,
+                        current_ipv6: None,
+                        status_message: format!("Error: {}", msg),
+                        is_running: false,
+                    };
+
+                    let mut statuses = self.statuses.lock().await;
+                    statuses.insert(profile.id.clone(), status.clone());
+                    
+                    if let Some(tx) = &self.event_tx {
+                        let _ = tx.send(SchedulerEvent::StatusUpdate(status));
+                    }
+                    
                     continue;
                 }
             };

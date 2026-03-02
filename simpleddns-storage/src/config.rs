@@ -136,11 +136,17 @@ impl StorageManager {
             for field in fields {
                 if let Some(val) = obj.remove(*field) {
                     if let Some(secret) = val.as_str() {
-                        if !secret.is_empty() {
+                        if !secret.is_empty() && secret != "********" {
                             let keyring_key = format!("{}_{}", profile.id, field);
                             let _ = self.save_secret(&keyring_key, secret);
                         }
                     }
+                }
+                
+                // Inject placeholder so frontend knows it exists
+                let keyring_key = format!("{}_{}", profile.id, field);
+                if self.load_secret(&keyring_key).is_ok() {
+                    obj.insert((*field).to_string(), serde_json::Value::String("********".to_string()));
                 }
             }
         }
@@ -153,9 +159,20 @@ impl StorageManager {
             let fields = secret_fields_for_provider(&p.provider_type);
             if let Some(obj) = p.provider_config.as_object_mut() {
                 for field in fields {
+                    let keyring_key = format!("{}_{}", p.id, field);
+                    
+                    let mut placeholder_found = false;
+                    if let Some(val) = obj.get(*field) {
+                        if val.as_str() == Some("********") {
+                            placeholder_found = true;
+                        }
+                    }
+                    if placeholder_found {
+                        obj.remove(*field);
+                    }
+                    
                     // Only inject if not already present
                     if !obj.contains_key(*field) {
-                        let keyring_key = format!("{}_{}", p.id, field);
                         if let Ok(secret) = self.load_secret(&keyring_key) {
                             obj.insert(
                                 field.to_string(),

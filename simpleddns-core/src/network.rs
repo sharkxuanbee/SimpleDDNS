@@ -27,6 +27,18 @@ pub fn pick_default_ipv6_interface() -> Option<String> {
 /// - `"example.com"` → `("example.com", "@")`
 /// - `"sub.deep.example.com"` → `("example.com", "sub.deep")`
 pub fn parse_domain_parts(domain: &str) -> (String, String) {
+    if let Ok(name) = addr::parse_domain_name(domain) {
+        if let Some(root) = name.root() {
+            let sub = if let Some(p) = name.prefix() {
+                p.trim_end_matches('.').to_string()
+            } else {
+                "@".to_string()
+            };
+            return (root.to_string(), sub);
+        }
+    }
+
+    // Fallback for custom or invalid TLDs
     let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
     if parts.len() >= 3 {
         let zone = format!("{}.{}", parts[1], parts[0]);
