@@ -1,4 +1,5 @@
 use crate::models::IpVersion;
+use crate::network::is_unicast_global;
 use reqwest::Client;
 use std::net::IpAddr;
 use thiserror::Error;
@@ -40,8 +41,6 @@ fn resolve_interface(iface_name: &str, version: IpVersion) -> Result<IpAddr, Res
             match (version, iface.addr.ip()) {
                 (IpVersion::IPv4, IpAddr::V4(ip)) => return Ok(IpAddr::V4(ip)),
                 (IpVersion::IPv6, IpAddr::V6(ip)) => {
-                    // Filter out link-local addresses (fe80::/10) as they are not routable globally
-                    // and usually not what users want for DDNS
                     if is_unicast_global(&ip) {
                         return Ok(IpAddr::V6(ip));
                     }
@@ -51,10 +50,6 @@ fn resolve_interface(iface_name: &str, version: IpVersion) -> Result<IpAddr, Res
         }
     }
     Err(ResolverError::NoLocalAddress)
-}
-fn is_unicast_global(ip: &std::net::Ipv6Addr) -> bool {
-    // Basic check: not loopback, not multicast, not link-local
-    !ip.is_loopback() && !ip.is_multicast() && (ip.segments()[0] & 0xffc0) != 0xfe80
 }
 fn resolve_local(version: IpVersion) -> Result<IpAddr, ResolverError> {
     // Use a UDP socket trick to find the default outbound address

@@ -30,6 +30,8 @@ interface DdnsProfile {
   provider_config: any;
 }
 
+const MAX_LOG_ENTRIES = 200;
+
 function App() {
   const [profiles, setProfiles] = useState<FrontendProfile[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
@@ -60,7 +62,7 @@ function App() {
   const fetchLogs = async () => {
     try {
       const data = await invoke<string[]>("get_logs");
-      setLogs(data);
+      setLogs(data.slice(-MAX_LOG_ENTRIES));
     } catch (error) {
       console.error("Failed to fetch logs:", error);
     }
@@ -81,7 +83,7 @@ function App() {
     fetchGlobalRunning();
 
     const unlistenLog = listen<string>("log", (event) => {
-      setLogs((prev) => [...prev, event.payload]);
+      setLogs((prev) => [...prev, event.payload].slice(-MAX_LOG_ENTRIES));
     });
 
     const unlistenStatus = listen("status_update", () => {
@@ -142,7 +144,7 @@ function App() {
       setFormName(profile.name);
       setFormProvider(profile.provider_type);
       setFormDomain(profile.domain);
-      
+
       // Extract config
       const config = profile.provider_config;
       const sub = config.sub_domain || "";
@@ -159,9 +161,9 @@ function App() {
           k2 = config.access_key_secret || "";
           break;
         case "cloudflare":
-          k1 = config.token || "";
+          k1 = config.api_token || "";
           break;
-        case "dnspod":
+        case "dnspod": {
           const token = config.login_token || "";
           if (token.includes(",")) {
             [k1, k2] = token.split(",");
@@ -169,13 +171,13 @@ function App() {
             k1 = token;
           }
           break;
+        }
         case "godaddy":
           k1 = config.key || "";
           k2 = config.secret || "";
           break;
         case "namecheap":
-          k1 = config.api_user || "";
-          k2 = config.api_key || "";
+          k1 = config.api_key || "";
           break;
       }
       setFormKey1(k1);
@@ -207,7 +209,7 @@ function App() {
         config.access_key_secret = formKey2;
         break;
       case "cloudflare":
-        config.token = formKey1;
+        config.api_token = formKey1;
         break;
       case "dnspod":
         config.login_token = `${formKey1},${formKey2}`;
@@ -217,8 +219,11 @@ function App() {
         config.secret = formKey2;
         break;
       case "namecheap":
-        config.api_user = formKey1;
-        config.api_key = formKey2;
+        config.api_key = formKey1;
+        break;
+      case "generic":
+        config.url = formKey1;
+        config.method = formKey2 || "GET";
         break;
     }
 
@@ -227,17 +232,15 @@ function App() {
       name: formName,
       provider_type: formProvider,
       domain: formDomain,
-      enabled: true, // Default enabled when saving/creating? Or preserve?
+      enabled: true,
       enable_ipv4: formV4,
       enable_ipv6: formV6,
       provider_config: config,
     };
 
-    // If editing, we might want to preserve the 'enabled' state, but the form doesn't expose it.
-    // The backend `save_profile` overwrites.
-    // So we should fetch the current enabled state if editing.
+    // Preserve 'enabled' state when editing
     if (editingId) {
-      const existing = profiles.find(p => p.id === editingId);
+      const existing = profiles.find((p) => p.id === editingId);
       if (existing) {
         profile.enabled = existing.enabled;
       }
@@ -253,22 +256,53 @@ function App() {
     }
   };
 
+  // Dynamic label helpers
+  const getKey1Label = () => {
+    switch (formProvider) {
+      case "aliyun": return "Access Key ID";
+      case "cloudflare": return "API Token";
+      case "dnspod": return "ID";
+      case "godaddy": return "Key";
+      case "namecheap": return "DDNS Password";
+      case "generic": return "URL Template";
+      default: return "Key 1";
+    }
+  };
+
+  const getKey2Label = () => {
+    switch (formProvider) {
+      case "aliyun": return "Access Key Secret";
+      case "dnspod": return "Token";
+      case "godaddy": return "Secret";
+      case "generic": return "HTTP Method";
+      default: return "";
+    }
+  };
+
+  const showKey2 = () => {
+    return ["aliyun", "dnspod", "godaddy", "generic"].includes(formProvider);
+  };
+
   return (
     <div className="container">
       <header>
         <h1>SimpleDDNS</h1>
         <div className="controls">
           <label className="switch">
-            <input 
-              type="checkbox" 
-              checked={globalRunning} 
+            <input
+              type="checkbox"
+              checked={globalRunning}
               onChange={toggleGlobalRunning}
             />
             <span className="slider"></span>
           </label>
           <span>{globalRunning ? "Running" : "Stopped"}</span>
-          <button className="btn btn-primary" onClick={triggerUpdate}>Trigger Update</button>
-          <button className="btn btn-primary" onClick={() => openModal()}>Add Profile</button>
+          <button className="btn btn-primary" onClick={triggerUpdate}>
+            Trigger Update
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            Add Profile
+          </button>
         </div>
       </header>
 
@@ -298,27 +332,44 @@ function App() {
                 </td>
                 <td>{profile.last_update || "-"}</td>
                 <td>
-                  <span className="status-badge">{profile.status_message}</span>
+                  <span className="status-badge">
+                    {profile.status_message}
+                  </span>
                 </td>
                 <td>
                   <label className="switch">
-                    <input 
-                      type="checkbox" 
-                      checked={profile.enabled} 
-                      onChange={(e) => toggleProfile(profile.id, e.target.checked)}
+                    <input
+                      type="checkbox"
+                      checked={profile.enabled}
+                      onChange={(e) =>
+                        toggleProfile(profile.id, e.target.checked)
+                      }
                     />
                     <span className="slider"></span>
                   </label>
                 </td>
                 <td>
-                  <button className="btn btn-secondary" style={{ marginRight: 5 }} onClick={() => openModal(profile)}>Edit</button>
-                  <button className="btn btn-danger" onClick={() => deleteProfile(profile.id)}>Delete</button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginRight: 5 }}
+                    onClick={() => openModal(profile)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => deleteProfile(profile.id)}
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}
             {profiles.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "#999" }}>No profiles found.</td>
+                <td colSpan={8} style={{ textAlign: "center", color: "#999" }}>
+                  No profiles found.
+                </td>
               </tr>
             )}
           </tbody>
@@ -327,33 +378,52 @@ function App() {
 
       <div className="logs-container">
         {logs.map((log, index) => (
-          <div key={index} className="log-entry">{log}</div>
+          <div key={index} className="log-entry">
+            {log}
+          </div>
         ))}
         <div ref={logsEndRef} />
       </div>
 
       {isModalOpen && (
-        <div className="modal-overlay" onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsModalOpen(false);
+          }}
+        >
           <div className="modal">
             <div className="modal-header">
               <h2>{editingId ? "Edit Profile" : "New Profile"}</h2>
-              <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>X</button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setIsModalOpen(false)}
+              >
+                X
+              </button>
             </div>
-            
+
             <div className="form-group">
               <label>Name</label>
-              <input value={formName} onChange={e => setFormName(e.target.value)} />
+              <input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+              />
             </div>
 
             <div className="form-row">
               <div className="form-group">
                 <label>Provider</label>
-                <select value={formProvider} onChange={e => setFormProvider(e.target.value)}>
+                <select
+                  value={formProvider}
+                  onChange={(e) => setFormProvider(e.target.value)}
+                >
                   <option value="aliyun">Aliyun</option>
                   <option value="cloudflare">Cloudflare</option>
                   <option value="dnspod">Dnspod</option>
                   <option value="godaddy">GoDaddy</option>
                   <option value="namecheap">Namecheap</option>
+                  <option value="generic">Generic HTTP</option>
                 </select>
               </div>
             </div>
@@ -361,88 +431,73 @@ function App() {
             <div className="form-row">
               <div className="form-group">
                 <label>Domain (Zone)</label>
-                <input value={formDomain} onChange={e => setFormDomain(e.target.value)} placeholder="example.com" />
+                <input
+                  value={formDomain}
+                  onChange={(e) => setFormDomain(e.target.value)}
+                  placeholder="example.com"
+                />
               </div>
               <div className="form-group">
                 <label>Subdomain</label>
-                <input value={formSubdomain} onChange={e => setFormSubdomain(e.target.value)} placeholder="www, @, *" />
+                <input
+                  value={formSubdomain}
+                  onChange={(e) => setFormSubdomain(e.target.value)}
+                  placeholder="www, @, *"
+                />
               </div>
             </div>
 
-            {/* Dynamic fields based on provider */}
-            {formProvider === "aliyun" && (
-              <>
-                <div className="form-group">
-                  <label>Access Key ID</label>
-                  <input value={formKey1} onChange={e => setFormKey1(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Access Key Secret</label>
-                  <input value={formKey2} onChange={e => setFormKey2(e.target.value)} type="password" />
-                </div>
-              </>
-            )}
+            <div className="form-group">
+              <label>{getKey1Label()}</label>
+              <input
+                value={formKey1}
+                onChange={(e) => setFormKey1(e.target.value)}
+                type={formProvider === "generic" ? "text" : "password"}
+                placeholder={formProvider === "generic" ? "https://api.example.com/update?ip={ipv4}" : ""}
+              />
+            </div>
 
-            {formProvider === "cloudflare" && (
+            {showKey2() && (
               <div className="form-group">
-                <label>API Token</label>
-                <input value={formKey1} onChange={e => setFormKey1(e.target.value)} type="password" />
+                <label>{getKey2Label()}</label>
+                <input
+                  value={formKey2}
+                  onChange={(e) => setFormKey2(e.target.value)}
+                  type={formProvider === "generic" ? "text" : "password"}
+                  placeholder={formProvider === "generic" ? "GET, POST, PUT..." : ""}
+                />
               </div>
-            )}
-
-            {formProvider === "dnspod" && (
-              <>
-                <div className="form-group">
-                  <label>ID</label>
-                  <input value={formKey1} onChange={e => setFormKey1(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Token</label>
-                  <input value={formKey2} onChange={e => setFormKey2(e.target.value)} type="password" />
-                </div>
-              </>
-            )}
-
-            {formProvider === "godaddy" && (
-              <>
-                <div className="form-group">
-                  <label>Key</label>
-                  <input value={formKey1} onChange={e => setFormKey1(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Secret</label>
-                  <input value={formKey2} onChange={e => setFormKey2(e.target.value)} type="password" />
-                </div>
-              </>
-            )}
-
-            {formProvider === "namecheap" && (
-              <>
-                <div className="form-group">
-                  <label>API User</label>
-                  <input value={formKey1} onChange={e => setFormKey1(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>API Key</label>
-                  <input value={formKey2} onChange={e => setFormKey2(e.target.value)} type="password" />
-                </div>
-              </>
             )}
 
             <div className="checkbox-group">
               <label className="checkbox-label">
-                <input type="checkbox" checked={formV4} onChange={e => setFormV4(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={formV4}
+                  onChange={(e) => setFormV4(e.target.checked)}
+                />
                 IPv4
               </label>
               <label className="checkbox-label">
-                <input type="checkbox" checked={formV6} onChange={e => setFormV6(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={formV6}
+                  onChange={(e) => setFormV6(e.target.checked)}
+                />
                 IPv6
               </label>
             </div>
 
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSave}>Save</button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setIsModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleSave}>
+                Save
+              </button>
             </div>
           </div>
         </div>

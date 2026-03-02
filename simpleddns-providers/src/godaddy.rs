@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
 use serde::Serialize;
+use simpleddns_core::network::parse_domain_parts;
+use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use std::net::IpAddr;
 use tracing::{debug, info};
 
@@ -45,16 +46,16 @@ async fn set_record(
         "https://api.godaddy.com/v1/domains/{}/records/{}/{}",
         domain, record_type, name
     );
-    
+
     let auth = build_auth_header(key, secret);
-    
+
     let record = GodaddyRecordRequest {
         record_type: record_type.to_string(),
         name: name.to_string(),
         data: value.to_string(),
         ttl: 3600,
     };
-    
+
     let resp = client
         .put(&url)
         .header("Authorization", auth)
@@ -62,13 +63,19 @@ async fn set_record(
         .json(&[record])
         .send()
         .await?;
-    
+
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("GoDaddy set record failed: {}", text)));
+        return Err(ProviderError::Api(format!(
+            "GoDaddy set record failed: {}",
+            text
+        )));
     }
-    
-    info!("GoDaddy: Set {} record for {}.{} -> {}", record_type, name, domain, value);
+
+    info!(
+        "GoDaddy: Set {} record for {}.{} -> {}",
+        record_type, name, domain, value
+    );
     Ok(())
 }
 
@@ -90,56 +97,57 @@ impl DdnsProvider for GodaddyProvider {
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ProviderError::Config("Missing key".into()))?;
-        
+
         let secret = config
             .get("secret")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ProviderError::Config("Missing secret".into()))?;
-        
+
         let zone_name = config
             .get("zone_name")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 2 {
-                    format!("{}.{}", parts[1], parts[0])
-                } else {
-                    domain.to_string()
-                }
+                let (zone, _) = parse_domain_parts(domain);
+                zone
             });
-        
+
         let sub_domain = config
             .get("sub_domain")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 3 {
-                    parts[2..].iter().copied().rev().collect::<Vec<_>>().join(".")
-                } else {
-                    "@".to_string()
-                }
+                let (_, sub) = parse_domain_parts(domain);
+                sub
             });
-        
+
         let record_name = if sub_domain == "@" || sub_domain.is_empty() {
             "@".to_string()
         } else {
             sub_domain
         };
-        
+
         debug!("GoDaddy: zone={}, record_name={}", zone_name, record_name);
-        
+
         if let Some(ip) = ipv4 {
             let ip_str = ip.to_string();
             set_record(client, key, secret, &zone_name, &record_name, "A", &ip_str).await?;
         }
-        
+
         if let Some(ip) = ipv6 {
             let ip_str = ip.to_string();
-            set_record(client, key, secret, &zone_name, &record_name, "AAAA", &ip_str).await?;
+            set_record(
+                client,
+                key,
+                secret,
+                &zone_name,
+                &record_name,
+                "AAAA",
+                &ip_str,
+            )
+            .await?;
         }
-        
+
         Ok(())
     }
 }

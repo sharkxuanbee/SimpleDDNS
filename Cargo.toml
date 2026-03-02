@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "simpleddns-app",
     "simpleddns-core",
     "simpleddns-providers",
     "simpleddns-storage",

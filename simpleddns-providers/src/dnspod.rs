@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
 use serde::Deserialize;
+use simpleddns_core::network::parse_domain_parts;
+use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use std::net::IpAddr;
 use tracing::{debug, info};
 
@@ -58,7 +59,7 @@ async fn find_record(
         ("record_type", record_type),
         ("record_line", "默认"),
     ];
-    
+
     let url = "https://dnsapi.cn/Record.List";
     let resp: DnspodResponse = client
         .post(url)
@@ -68,7 +69,7 @@ async fn find_record(
         .json()
         .await
         .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
-    
+
     if resp.status.code != "1" {
         if resp.status.code == "-15" {
             return Ok(None);
@@ -78,13 +79,13 @@ async fn find_record(
             resp.status.code, resp.status.message
         )));
     }
-    
+
     if let Some(records) = resp.records {
         if let Some(record) = records.into_iter().next() {
             return Ok(Some(record));
         }
     }
-    
+
     Ok(None)
 }
 
@@ -106,7 +107,7 @@ async fn add_record(
         ("record_line", "默认"),
         ("ttl", "600"),
     ];
-    
+
     let url = "https://dnsapi.cn/Record.Create";
     let resp: DnspodActionResponse = client
         .post(url)
@@ -116,15 +117,18 @@ async fn add_record(
         .json()
         .await
         .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
-    
+
     if resp.status.code != "1" {
         return Err(ProviderError::Api(format!(
             "DNSPod create record error: {} - {}",
             resp.status.code, resp.status.message
         )));
     }
-    
-    info!("DNSPod: Created {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+
+    info!(
+        "DNSPod: Created {} record for {}.{} -> {}",
+        record_type, sub_domain, domain, value
+    );
     Ok(())
 }
 
@@ -147,7 +151,7 @@ async fn update_record(
         ("value", value),
         ("record_line", "默认"),
     ];
-    
+
     let url = "https://dnsapi.cn/Record.Modify";
     let resp: DnspodActionResponse = client
         .post(url)
@@ -157,15 +161,18 @@ async fn update_record(
         .json()
         .await
         .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
-    
+
     if resp.status.code != "1" {
         return Err(ProviderError::Api(format!(
             "DNSPod update record error: {} - {}",
             resp.status.code, resp.status.message
         )));
     }
-    
-    info!("DNSPod: Updated {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+
+    info!(
+        "DNSPod: Updated {} record for {}.{} -> {}",
+        record_type, sub_domain, domain, value
+    );
     Ok(())
 }
 
@@ -186,39 +193,33 @@ impl DdnsProvider for DnspodProvider {
         let login_token = config
             .get("login_token")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ProviderError::Config("Missing login_token (format: id,token)".into()))?;
-        
+            .ok_or_else(|| {
+                ProviderError::Config("Missing login_token (format: id,token)".into())
+            })?;
+
         let zone_name = config
             .get("zone_name")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 2 {
-                    format!("{}.{}", parts[1], parts[0])
-                } else {
-                    domain.to_string()
-                }
+                let (zone, _) = parse_domain_parts(domain);
+                zone
             });
-        
+
         let sub_domain = config
             .get("sub_domain")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 3 {
-                    parts[2..].iter().copied().rev().collect::<Vec<_>>().join(".")
-                } else {
-                    "@".to_string()
-                }
+                let (_, sub) = parse_domain_parts(domain);
+                sub
             });
-        
+
         debug!("DNSPod: zone={}, sub_domain={}", zone_name, sub_domain);
-        
+
         if let Some(ip) = ipv4 {
             let ip_str = ip.to_string();
-            
+
             match find_record(client, login_token, &zone_name, &sub_domain, "A").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
@@ -230,7 +231,8 @@ impl DdnsProvider for DnspodProvider {
                             &sub_domain,
                             "A",
                             &ip_str,
-                        ).await?;
+                        )
+                        .await?;
                     } else {
                         debug!("DNSPod: A record already up-to-date: {}", ip_str);
                     }
@@ -240,10 +242,10 @@ impl DdnsProvider for DnspodProvider {
                 }
             }
         }
-        
+
         if let Some(ip) = ipv6 {
             let ip_str = ip.to_string();
-            
+
             match find_record(client, login_token, &zone_name, &sub_domain, "AAAA").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
@@ -255,17 +257,26 @@ impl DdnsProvider for DnspodProvider {
                             &sub_domain,
                             "AAAA",
                             &ip_str,
-                        ).await?;
+                        )
+                        .await?;
                     } else {
                         debug!("DNSPod: AAAA record already up-to-date: {}", ip_str);
                     }
                 }
                 None => {
-                    add_record(client, login_token, &zone_name, &sub_domain, "AAAA", &ip_str).await?;
+                    add_record(
+                        client,
+                        login_token,
+                        &zone_name,
+                        &sub_domain,
+                        "AAAA",
+                        &ip_str,
+                    )
+                    .await?;
                 }
             }
         }
-        
+
         Ok(())
     }
 }

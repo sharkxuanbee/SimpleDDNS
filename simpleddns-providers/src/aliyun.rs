@@ -1,11 +1,13 @@
 use async_trait::async_trait;
-use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use reqwest::Client;
 use serde::Deserialize;
-use std::net::IpAddr;
+use simpleddns_core::network::parse_domain_parts;
+use simpleddns_core::provider::{DdnsProvider, ProviderError};
 use std::collections::BTreeMap;
-use base64::Engine;
+use std::net::IpAddr;
 use tracing::{debug, info};
+
+use base64::Engine;
 
 pub struct AliyunProvider;
 
@@ -44,11 +46,10 @@ struct AliyunContext<'a> {
 }
 
 fn sign(secret: &str, params: &BTreeMap<String, String>) -> String {
-    let mut sorted: Vec<String> = params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
-    sorted.sort();
+    let sorted: Vec<String> = params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
     let string_to_sign = sorted.join("&");
     let string_to_sign = format!("POST&%2F&{}", urlencoding::encode(&string_to_sign));
-    
+
     let key = format!("{}&", secret);
     let mac = hmac_sha1::hmac_sha1(key.as_bytes(), string_to_sign.as_bytes());
     base64::engine::general_purpose::STANDARD.encode(mac)
@@ -65,18 +66,22 @@ async fn find_record(
     params.insert("Version".to_string(), "2015-01-09".to_string());
     params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
-    params.insert("Timestamp".to_string(), timestamp.clone());
+    params.insert("Timestamp".to_string(), timestamp);
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
-    params.insert("SignatureNonce".to_string(), uuid::Uuid::new_v4().to_string());
+    params.insert(
+        "SignatureNonce".to_string(),
+        uuid::Uuid::new_v4().to_string(),
+    );
     params.insert("Action".to_string(), "DescribeSubDomainRecords".to_string());
     params.insert("SubDomain".to_string(), domain.to_string());
     params.insert("Type".to_string(), record_type.to_string());
-    
+
     let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
-    
+
     let url = "https://alidns.aliyuncs.com/";
-    let resp: AliyunDescribeRecordResponse = ctx.client
+    let resp: AliyunDescribeRecordResponse = ctx
+        .client
         .post(url)
         .form(&params)
         .send()
@@ -84,7 +89,7 @@ async fn find_record(
         .json()
         .await
         .map_err(|e| ProviderError::Api(format!("Failed to parse response: {}", e)))?;
-    
+
     if let Some(records) = resp.records {
         if let Some(record_list) = records.record {
             if let Some(record) = record_list.into_iter().next() {
@@ -108,32 +113,34 @@ async fn add_record(
     params.insert("Version".to_string(), "2015-01-09".to_string());
     params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
-    params.insert("Timestamp".to_string(), timestamp.clone());
+    params.insert("Timestamp".to_string(), timestamp);
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
-    params.insert("SignatureNonce".to_string(), uuid::Uuid::new_v4().to_string());
+    params.insert(
+        "SignatureNonce".to_string(),
+        uuid::Uuid::new_v4().to_string(),
+    );
     params.insert("Action".to_string(), "AddDomainRecord".to_string());
     params.insert("DomainName".to_string(), domain.to_string());
     params.insert("RR".to_string(), sub_domain.to_string());
     params.insert("Type".to_string(), record_type.to_string());
     params.insert("Value".to_string(), value.to_string());
     params.insert("TTL".to_string(), "600".to_string());
-    
+
     let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
-    
+
     let url = "https://alidns.aliyuncs.com/";
-    let resp = ctx.client
-        .post(url)
-        .form(&params)
-        .send()
-        .await?;
-    
+    let resp = ctx.client.post(url).form(&params).send().await?;
+
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
         return Err(ProviderError::Api(format!("Add record failed: {}", text)));
     }
-    
-    info!("Aliyun: Created {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+
+    info!(
+        "Aliyun: Created {} record for {}.{} -> {}",
+        record_type, sub_domain, domain, value
+    );
     Ok(())
 }
 
@@ -151,32 +158,37 @@ async fn update_record(
     params.insert("Version".to_string(), "2015-01-09".to_string());
     params.insert("AccessKeyId".to_string(), ctx.access_key_id.to_string());
     params.insert("SignatureMethod".to_string(), "HMAC-SHA1".to_string());
-    params.insert("Timestamp".to_string(), timestamp.clone());
+    params.insert("Timestamp".to_string(), timestamp);
     params.insert("SignatureVersion".to_string(), "1.0".to_string());
-    params.insert("SignatureNonce".to_string(), uuid::Uuid::new_v4().to_string());
+    params.insert(
+        "SignatureNonce".to_string(),
+        uuid::Uuid::new_v4().to_string(),
+    );
     params.insert("Action".to_string(), "UpdateDomainRecord".to_string());
     params.insert("RecordId".to_string(), record_id.to_string());
     params.insert("RR".to_string(), sub_domain.to_string());
     params.insert("Type".to_string(), record_type.to_string());
     params.insert("Value".to_string(), value.to_string());
     params.insert("TTL".to_string(), "600".to_string());
-    
+
     let signature = sign(ctx.access_key_secret, &params);
     params.insert("Signature".to_string(), signature);
-    
+
     let url = "https://alidns.aliyuncs.com/";
-    let resp = ctx.client
-        .post(url)
-        .form(&params)
-        .send()
-        .await?;
-    
+    let resp = ctx.client.post(url).form(&params).send().await?;
+
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("Update record failed: {}", text)));
+        return Err(ProviderError::Api(format!(
+            "Update record failed: {}",
+            text
+        )));
     }
-    
-    info!("Aliyun: Updated {} record for {}.{} -> {}", record_type, sub_domain, domain, value);
+
+    info!(
+        "Aliyun: Updated {} record for {}.{} -> {}",
+        record_type, sub_domain, domain, value
+    );
     Ok(())
 }
 
@@ -198,7 +210,7 @@ impl DdnsProvider for AliyunProvider {
             .get("access_key_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ProviderError::Config("Missing access_key_id".into()))?;
-        
+
         let access_key_secret = config
             .get("access_key_secret")
             .and_then(|v| v.as_str())
@@ -209,35 +221,27 @@ impl DdnsProvider for AliyunProvider {
             access_key_id,
             access_key_secret,
         };
-        
+
         let zone_name = config
             .get("zone_name")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 2 {
-                    format!("{}.{}", parts[1], parts[0])
-                } else {
-                    domain.to_string()
-                }
+                let (zone, _) = parse_domain_parts(domain);
+                zone
             });
-        
+
         let sub_domain = config
             .get("sub_domain")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                let parts: Vec<&str> = domain.rsplitn(3, '.').collect();
-                if parts.len() >= 3 {
-                    parts[2..].iter().copied().rev().collect::<Vec<_>>().join(".")
-                } else {
-                    "@".to_string()
-                }
+                let (_, sub) = parse_domain_parts(domain);
+                sub
             });
-        
+
         debug!("Aliyun: zone={}, sub_domain={}", zone_name, sub_domain);
-        
+
         if let Some(ip) = ipv4 {
             let ip_str = ip.to_string();
             let full_domain = if sub_domain == "@" {
@@ -245,7 +249,7 @@ impl DdnsProvider for AliyunProvider {
             } else {
                 format!("{}.{}", sub_domain, zone_name)
             };
-            
+
             match find_record(&ctx, &full_domain, "A").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
@@ -256,7 +260,8 @@ impl DdnsProvider for AliyunProvider {
                             &sub_domain,
                             "A",
                             &ip_str,
-                        ).await?;
+                        )
+                        .await?;
                     } else {
                         debug!("Aliyun: A record already up-to-date: {}", ip_str);
                     }
@@ -266,7 +271,7 @@ impl DdnsProvider for AliyunProvider {
                 }
             }
         }
-        
+
         if let Some(ip) = ipv6 {
             let ip_str = ip.to_string();
             let full_domain = if sub_domain == "@" {
@@ -274,7 +279,7 @@ impl DdnsProvider for AliyunProvider {
             } else {
                 format!("{}.{}", sub_domain, zone_name)
             };
-            
+
             match find_record(&ctx, &full_domain, "AAAA").await? {
                 Some(existing) => {
                     if existing.value != ip_str {
@@ -285,7 +290,8 @@ impl DdnsProvider for AliyunProvider {
                             &sub_domain,
                             "AAAA",
                             &ip_str,
-                        ).await?;
+                        )
+                        .await?;
                     } else {
                         debug!("Aliyun: AAAA record already up-to-date: {}", ip_str);
                     }
@@ -295,7 +301,7 @@ impl DdnsProvider for AliyunProvider {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
