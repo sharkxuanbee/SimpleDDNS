@@ -3,6 +3,7 @@ members = [
     "simpleddns-app",
     "simpleddns-core",
     "simpleddns-providers",
-    "simpleddns-storage"
+    "simpleddns-storage",
+    "simpleddns-gui/src-tauri"
 ]
 resolver = "2"
